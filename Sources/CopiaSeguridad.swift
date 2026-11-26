@@ -33,10 +33,15 @@ struct CopiaSeguridad: Codable {
     var aportaciones: [Aportacion]? = nil
 
     var totalElementos: Int {
-        escapadas.count + vuelos.count + trenes.count + alojamientos.count + gastos.count
-            + checklist.count + actividades.count + ideas.count + retos.count + pagos.count
-            + fechasEspeciales.count + deseos.count + billetes.count
-            + (opciones?.count ?? 0) + (huchas?.count ?? 0) + (aportaciones?.count ?? 0)
+        // Sumado por partes: en una sola expresión el compilador tarda demasiado.
+        let viajes: Int = escapadas.count + vuelos.count + trenes.count + alojamientos.count
+        let dentro: Int = gastos.count + checklist.count + actividades.count + ideas.count
+        let otros: Int = retos.count + pagos.count + fechasEspeciales.count + deseos.count + billetes.count
+        let opcionesTotal: Int = opciones?.count ?? 0
+        let huchasTotal: Int = huchas?.count ?? 0
+        let aportacionesTotal: Int = aportaciones?.count ?? 0
+        let nuevos: Int = opcionesTotal + huchasTotal + aportacionesTotal
+        return viajes + dentro + otros + nuevos
     }
 
     static func codificador() -> JSONEncoder {
