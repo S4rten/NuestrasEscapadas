@@ -11,6 +11,7 @@ struct AjustesView: View {
     @EnvironmentObject var sesion: Sesion
     @EnvironmentObject var divisas: ServicioDivisas
     @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var red = MonitorConexion.compartido
 
     @State private var nombre = ""
     @State private var confirmandoSalida = false
@@ -35,6 +36,26 @@ struct AjustesView: View {
                         Text(almacen.estado.texto)
                             .font(.subheadline)
                     }
+                    if !red.hayConexion || almacen.subidaRetrasada {
+                        BannerSinConexion()
+                    }
+                }
+
+                Section {
+                    NavigationLink {
+                        FechasEspecialesView()
+                    } label: {
+                        HStack {
+                            Label("Fechas especiales", systemImage: "heart.circle.fill")
+                            Spacer()
+                            if !almacen.fechasEspeciales.isEmpty {
+                                Text("\(almacen.fechasEspeciales.count)")
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                } footer: {
+                    Text("Aniversarios, cumpleaños… Os avisaremos en Próximas cuando falte poco para planear una escapada.")
                 }
 
                 Section {

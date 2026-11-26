@@ -74,6 +74,14 @@ struct YaVividoView: View {
             } else {
                 resumen
 
+                Section {
+                    NavigationLink {
+                        EstadisticasView()
+                    } label: {
+                        Label("Estadísticas y países visitados", systemImage: "chart.bar.fill")
+                    }
+                }
+
                 if !podio.isEmpty {
                     Section("🏆 Vuestro podio") {
                         ForEach(Array(podio.enumerated()), id: \.element.id) { indice, e in

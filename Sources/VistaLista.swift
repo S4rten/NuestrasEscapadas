@@ -95,6 +95,8 @@ struct ListaSecciones: View {
             }
         }
 
+        SeccionPlantillasMaleta(escapada: escapada)
+
         if mostrarIdeas {
             Section {
                 HStack(spacing: 10) {
@@ -110,7 +112,13 @@ struct ListaSecciones: View {
                     .disabled(textoIdea.recortado.isEmpty)
                 }
 
-                ForEach(almacen.ideasDe(escapada.id)) { idea in
+                // Las ideas que más os gustan, arriba.
+                let ideasOrdenadas = almacen.ideasDe(escapada.id).sorted { a, b in
+                    let pa = puntuacion(a.votos)
+                    let pb = puntuacion(b.votos)
+                    return pa != pb ? pa > pb : a.creadaEn < b.creadaEn
+                }
+                ForEach(ideasOrdenadas) { idea in
                     VStack(alignment: .leading, spacing: 4) {
                         Text(idea.texto)
                             .font(.subheadline)
@@ -124,6 +132,7 @@ struct ListaSecciones: View {
                                 BotonEnlace(titulo: "Abrir", url: enlace)
                             }
                         }
+                        BotonesVoto(coleccion: .ideas, id: idea.id, votos: idea.votos)
                     }
                     .swipeActions(edge: .trailing) {
                         Button(role: .destructive) {
@@ -135,6 +144,8 @@ struct ListaSecciones: View {
                 }
             } header: {
                 Text("Notas rápidas e ideas")
+            } footer: {
+                Text("Votad 👍 o 👎 cada idea: las que más os gustan suben arriba.")
             }
         }
     }

@@ -64,6 +64,8 @@ struct RecuerdoSecciones: View {
         } footer: {
             Text("Se guarda al salir del cuadro de texto y se sincroniza con tu pareja.")
         }
+
+        SeccionResumenDiario(escapada: escapada)
     }
 
     private func guardarNota(_ campo: String, _ nota: Int) {

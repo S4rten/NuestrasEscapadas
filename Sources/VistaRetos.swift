@@ -22,6 +22,8 @@ struct RetosSecciones: View {
         let hechos = retos.filter { $0.completado }.count
         let sugerenciasLibres = RetosSugeridos.lista.filter { s in !retos.contains(where: { $0.texto == s }) }
 
+        SeccionRetoDelDia(escapada: escapada)
+
         Section {
             if !retos.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {

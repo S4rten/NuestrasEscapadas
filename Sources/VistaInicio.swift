@@ -7,6 +7,7 @@ import SwiftUI
 struct InicioView: View {
     @EnvironmentObject var almacen: Almacen
     @EnvironmentObject var sesion: Sesion
+    @ObservedObject private var red = MonitorConexion.compartido
     @State private var mostrandoNueva = false
     @State private var mostrandoAjustes = false
 
@@ -22,7 +23,7 @@ struct InicioView: View {
                             } label: {
                                 HStack(spacing: 6) {
                                     Circle()
-                                        .fill(almacen.estado.estaBien ? Color.green : Color.orange)
+                                        .fill(almacen.estado.estaBien && red.hayConexion ? Color.green : Color.orange)
                                         .frame(width: 8, height: 8)
                                     Text(sesion.miNombre)
                                         .font(.caption.bold())
@@ -66,9 +67,17 @@ struct InicioView: View {
 // PRÓXIMAS
 // ============================================================================
 
+/// Fecha propuesta para crear una escapada desde una fecha especial.
+private struct FechaParaNueva: Identifiable {
+    let id = UUID()
+    let fecha: Date
+}
+
 struct ProximasView: View {
     @EnvironmentObject var almacen: Almacen
+    @EnvironmentObject var sesion: Sesion
     @Binding var mostrandoNueva: Bool
+    @State private var nuevaConFecha: FechaParaNueva? = nil
 
     private var proximas: [Escapada] {
         almacen.escapadas
@@ -76,11 +85,29 @@ struct ProximasView: View {
             .sorted { $0.fechaInicio < $1.fechaInicio }
     }
 
+    /// Viaje en curso (modo "Hoy"), si lo hay y no es una sorpresa oculta para mí.
+    private var enCurso: Escapada? {
+        proximas.first { $0.diaDeHoy != nil && !$0.sorpresaOculta(para: sesion.miId) }
+    }
+
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
+                BannerSinConexion()
+
                 if case .error(let mensaje) = almacen.estado {
                     BannerError(mensaje: mensaje)
+                }
+
+                if let hoy = enCurso {
+                    NavigationLink(value: hoy.id) {
+                        TarjetaHoy(escapada: hoy)
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                TarjetaFechaEspecial { fecha in
+                    nuevaConFecha = FechaParaNueva(fecha: fecha)
                 }
 
                 if let primera = proximas.first {
@@ -127,6 +154,9 @@ struct ProximasView: View {
         .background(Color(uiColor: .systemGroupedBackground))
         .navigationDestination(for: String.self) { id in
             DetalleEscapadaView(escapadaId: id)
+        }
+        .sheet(item: $nuevaConFecha) { f in
+            NuevaEscapadaView(existente: nil, fechaSugerida: f.fecha)
         }
     }
 }

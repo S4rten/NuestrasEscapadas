@@ -71,6 +71,7 @@ func urlMapa(consulta: String) -> URL? {
 enum Coleccion: String, CaseIterable {
     case escapadas, vuelos, trenes, alojamientos, gastos, checklist, actividades, ideas
     case retos, fotos
+    case diarios, pagos, fechasEspeciales
 }
 
 struct Miembro: Identifiable, Hashable {
@@ -137,12 +138,13 @@ struct Escapada: Identifiable, Codable {
     var valoracion: Valoracion = Valoracion()
     var creadaEn: Date = Date()
     var presupuesto: Double = 0             // en euros; 0 = sin presupuesto
+    var paisCodigo: String = ""             // ISO del país (ES, FR…); "" = sin saber
 
     enum CodingKeys: String, CodingKey {
         case id, titulo, destino, latitud, longitud, divisaDestino, fechaInicio, fechaFin, icono
         case tieneVuelos, tieneTrenes, esSorpresa, pistaSorpresa, diasRevelarAntes, creadaPorId
         case momentoFavorito, recuerdo, valoracion, creadaEn
-        case presupuesto
+        case presupuesto, paisCodigo
     }
 
     // MARK: Cálculos
@@ -206,6 +208,7 @@ extension Escapada {
         valoracion = c.valor(.valoracion, Valoracion())
         creadaEn = c.valor(.creadaEn, Date())
         presupuesto = c.valor(.presupuesto, 0.0)
+        paisCodigo = c.valor(.paisCodigo, "")
     }
 }
 
@@ -339,10 +342,18 @@ struct Gasto: Identifiable, Codable {
     var pagadoPorId: String = ""            // ID del miembro que pagó
     var categoria: String = "Comida"
     var fecha: Date = Date()
+    var porcentajePagador: Double = 50      // parte del gasto que corresponde a quien pagó (0–100)
 
     enum CodingKeys: String, CodingKey {
         case id, escapadaId, concepto, importe, importeOriginal, codigoDivisa, tasaAEuros
         case pagadoPorId, categoria, fecha
+        case porcentajePagador
+    }
+
+    /// Parte del gasto (en euros) que le corresponde a una persona.
+    func parte(de miembroId: String) -> Double {
+        let pct = min(max(porcentajePagador, 0), 100) / 100
+        return pagadoPorId == miembroId ? importe * pct : importe * (1 - pct)
     }
 }
 
@@ -359,6 +370,7 @@ extension Gasto {
         pagadoPorId = c.valor(.pagadoPorId, "")
         categoria = c.valor(.categoria, "Otros")
         fecha = c.valor(.fecha, Date())
+        porcentajePagador = c.valor(.porcentajePagador, 50.0)
     }
 }
 
@@ -418,9 +430,11 @@ struct Actividad: Identifiable, Codable {
     var hora: Date? = nil
     var completada: Bool = false
     var creadaEn: Date = Date()
+    var votos: [String: Int] = [:]          // ID del miembro -> 1 (me gusta) o -1 (no me gusta)
 
     enum CodingKeys: String, CodingKey {
         case id, escapadaId, dia, nombreSitio, urlSitio, hora, completada, creadaEn
+        case votos
     }
 }
 
@@ -435,6 +449,7 @@ extension Actividad {
         hora = try? c.decodeIfPresent(Date.self, forKey: .hora)
         completada = c.valor(.completada, false)
         creadaEn = c.valor(.creadaEn, Date())
+        votos = c.valor(.votos, [String: Int]())
     }
 }
 
@@ -444,9 +459,11 @@ struct Idea: Identifiable, Codable {
     var texto: String = ""
     var autorId: String = ""
     var creadaEn: Date = Date()
+    var votos: [String: Int] = [:]          // ID del miembro -> 1 o -1
 
     enum CodingKeys: String, CodingKey {
         case id, escapadaId, texto, autorId, creadaEn
+        case votos
     }
 }
 
@@ -458,6 +475,126 @@ extension Idea {
         texto = c.valor(.texto, "")
         autorId = c.valor(.autorId, "")
         creadaEn = c.valor(.creadaEn, Date())
+        votos = c.valor(.votos, [String: Int]())
+    }
+}
+
+/// Puntuación de unos votos: suma de 👍 (+1) y 👎 (-1).
+func puntuacion(_ votos: [String: Int]) -> Int {
+    votos.values.reduce(0, +)
+}
+
+// ============================================================================
+// DIARIO DE CADA DÍA (id = "{escapadaId}-{dia}", uno por día del viaje)
+// ============================================================================
+
+struct DiarioDia: Identifiable, Codable {
+    var id: String = ""
+    var escapadaId: String = ""
+    var dia: Int = 1
+    var nota: String = ""
+    var emoji: String = ""
+
+    enum CodingKeys: String, CodingKey {
+        case id, escapadaId, dia, nota, emoji
+    }
+
+    static func idPara(escapadaId: String, dia: Int) -> String {
+        "\(escapadaId)-\(dia)"
+    }
+}
+
+extension DiarioDia {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = c.valor(.id, "")
+        escapadaId = c.valor(.escapadaId, "")
+        dia = c.valor(.dia, 1)
+        nota = c.valor(.nota, "")
+        emoji = c.valor(.emoji, "")
+    }
+}
+
+// ============================================================================
+// PAGOS ENTRE VOSOTROS (para saldar cuentas; no cuentan como gasto del viaje)
+// ============================================================================
+
+struct PagoPareja: Identifiable, Codable {
+    var id: String = nuevoId()
+    var escapadaId: String = ""
+    var deId: String = ""                   // quien paga la deuda
+    var aId: String = ""                    // quien la recibe
+    var importe: Double = 0                 // en euros
+    var fecha: Date = Date()
+
+    enum CodingKeys: String, CodingKey {
+        case id, escapadaId, deId, aId, importe, fecha
+    }
+}
+
+extension PagoPareja {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = c.valor(.id, nuevoId())
+        escapadaId = c.valor(.escapadaId, "")
+        deId = c.valor(.deId, "")
+        aId = c.valor(.aId, "")
+        importe = c.valor(.importe, 0.0)
+        fecha = c.valor(.fecha, Date())
+    }
+}
+
+// ============================================================================
+// FECHAS ESPECIALES (aniversarios, cumpleaños…)
+// ============================================================================
+
+struct FechaEspecial: Identifiable, Codable {
+    var id: String = nuevoId()
+    var titulo: String = ""
+    var emoji: String = "💍"
+    var fecha: Date = Date()
+    var anual: Bool = true                  // se repite cada año
+    var creadaPorId: String = ""
+
+    enum CodingKeys: String, CodingKey {
+        case id, titulo, emoji, fecha, anual, creadaPorId
+    }
+
+    /// Próxima vez que toca (hoy incluido). nil si no es anual y ya pasó.
+    func proximaOcurrencia(desde hoy: Date = Date()) -> Date? {
+        let cal = Calendar.current
+        let inicioHoy = hoy.inicioDelDia
+        guard anual else {
+            return fecha.inicioDelDia >= inicioHoy ? fecha.inicioDelDia : nil
+        }
+        let partes = cal.dateComponents([.month, .day], from: fecha)
+        return cal.nextDate(after: inicioHoy.sumando(dias: -1),
+                            matching: DateComponents(month: partes.month, day: partes.day),
+                            matchingPolicy: .nextTimePreservingSmallerComponents)?.inicioDelDia
+    }
+
+    func diasHasta(desde hoy: Date = Date()) -> Int? {
+        guard let proxima = proximaOcurrencia(desde: hoy) else { return nil }
+        return Calendar.current.dateComponents([.day], from: hoy.inicioDelDia, to: proxima).day
+    }
+
+    /// Años que se cumplen en la próxima ocurrencia (solo si es anual y la fecha es pasada).
+    func anosQueSeCumplen(desde hoy: Date = Date()) -> Int? {
+        guard anual, let proxima = proximaOcurrencia(desde: hoy) else { return nil }
+        let anos = Calendar.current.dateComponents([.year], from: fecha.inicioDelDia, to: proxima).year ?? 0
+        return anos > 0 ? anos : nil
+    }
+}
+
+extension FechaEspecial {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = c.valor(.id, nuevoId())
+        titulo = c.valor(.titulo, "")
+        emoji = c.valor(.emoji, "💍")
+        fecha = c.valor(.fecha, Date())
+        anual = c.valor(.anual, true)
+        creadaPorId = c.valor(.creadaPorId, "")
     }
 }
 
@@ -527,19 +664,27 @@ struct EventoLinea: Identifiable {
     let actividadId: String?     // si no es nil, es una actividad editable
     let completada: Bool
     let enlace: URL?
+    var votos: [String: Int] = [:]
+    var ruta: URL? = nil         // "Cómo llegar" en Apple Maps
 }
 
 struct ResumenGastos {
     let total: Double
     let pagadoPorMi: Double
+    let miParte: Double          // lo que me toca pagar según el reparto de cada gasto
+    let pagosHechos: Double      // lo que yo he pagado a mi pareja para saldar
+    let pagosRecibidos: Double   // lo que mi pareja me ha pagado para saldar
 
-    init(gastos: [Gasto], miId: String) {
+    init(gastos: [Gasto], miId: String, pagos: [PagoPareja] = []) {
         total = gastos.reduce(0) { $0 + $1.importe }
         pagadoPorMi = gastos.filter { $0.pagadoPorId == miId }.reduce(0) { $0 + $1.importe }
+        miParte = gastos.reduce(0) { $0 + $1.parte(de: miId) }
+        pagosHechos = pagos.filter { $0.deId == miId }.reduce(0) { $0 + $1.importe }
+        pagosRecibidos = pagos.filter { $0.aId == miId }.reduce(0) { $0 + $1.importe }
     }
 
     var pagadoPorPareja: Double { total - pagadoPorMi }
 
     /// Positivo: tu pareja te debe esa cantidad. Negativo: se la debes tú.
-    var saldo: Double { pagadoPorMi - total / 2 }
+    var saldo: Double { pagadoPorMi - miParte + pagosHechos - pagosRecibidos }
 }

@@ -13,7 +13,7 @@ struct GastosSecciones: View {
 
     var body: some View {
         let gastos = almacen.gastosDe(escapada.id)
-        let resumen = ResumenGastos(gastos: gastos, miId: sesion.miId)
+        let resumen = ResumenGastos(gastos: gastos, miId: sesion.miId, pagos: almacen.pagosDe(escapada.id))
         let pareja = almacen.nombreDePareja(miId: sesion.miId)
         let hayPareja = almacen.hayPareja(miId: sesion.miId)
 
@@ -53,6 +53,10 @@ struct GastosSecciones: View {
             }
             .padding(.vertical, 4)
 
+            if hayPareja && abs(resumen.saldo) >= 0.01 {
+                FilaSaldarCuentas(escapada: escapada, saldo: resumen.saldo)
+            }
+
             ForEach(gastos) { gasto in
                 filaGasto(gasto)
                     .contentShape(Rectangle())
@@ -74,8 +78,10 @@ struct GastosSecciones: View {
         } header: {
             Text("Gastos compartidos")
         } footer: {
-            Text("Todo se reparte a partes iguales. Toca un gasto para editarlo y desliza para borrarlo.")
+            Text("Por defecto se reparte a medias; al añadir un gasto podéis cambiar el reparto. Toca un gasto para editarlo y desliza para borrarlo.")
         }
+
+        SeccionPagosPareja(escapada: escapada)
 
         if !gastos.isEmpty {
             SeccionGastosPorDia(escapada: escapada, gastos: gastos)
@@ -102,6 +108,11 @@ struct GastosSecciones: View {
                 Text("\(gasto.categoria) · Pagó \(gasto.pagadoPorId == sesion.miId ? "yo" : almacen.nombre(de: gasto.pagadoPorId, miId: sesion.miId)) · \(gasto.fecha.formatted(date: .abbreviated, time: .omitted))")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
+                if let reparto = textoRepartoCorto(gasto.porcentajePagador) {
+                    Text("⚖️ \(reparto)")
+                        .font(.caption2.bold())
+                        .foregroundStyle(Color.accentColor)
+                }
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 2) {
@@ -140,6 +151,8 @@ struct FormularioGasto: View {
     @State private var pagadoPorId: String
     @State private var categoria: String
     @State private var fecha: Date
+    @State private var porcentajePagador: Double = 50
+    @State private var modoReparto: ModoReparto = .aMedias
 
     /// `fechaInicial`: para gastos nuevos creados desde un día concreto del itinerario.
     init(escapada: Escapada, existente: Gasto?, fechaInicial: Date? = nil) {
@@ -153,6 +166,8 @@ struct FormularioGasto: View {
             _pagadoPorId = State(initialValue: g.pagadoPorId)
             _categoria = State(initialValue: g.categoria)
             _fecha = State(initialValue: g.fecha)
+            _porcentajePagador = State(initialValue: g.porcentajePagador)
+            _modoReparto = State(initialValue: ModoReparto.para(g.porcentajePagador))
         } else {
             _concepto = State(initialValue: "")
             _importeTexto = State(initialValue: "")
@@ -248,13 +263,28 @@ struct FormularioGasto: View {
                     }
                 }
 
-                Section("Reparto y categoría") {
+                Section {
                     Picker("¿Quién pagó?", selection: $pagadoPorId) {
                         ForEach(pagadores) { p in
                             Text(p.nombre).tag(p.id)
                         }
                     }
                     .pickerStyle(.segmented)
+
+                    Picker("Reparto", selection: $modoReparto) {
+                        ForEach(ModoReparto.allCases) { m in
+                            Text(m.etiqueta).tag(m)
+                        }
+                    }
+
+                    if modoReparto == .personalizado {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Slider(value: $porcentajePagador, in: 0...100, step: 5)
+                            Text("Quien paga: \(Int(porcentajePagador.rounded())) % · La otra persona: \(100 - Int(porcentajePagador.rounded())) %")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
 
                     Picker("Categoría", selection: $categoria) {
                         ForEach(CategoriaGasto.allCases, id: \.rawValue) { c in
@@ -263,7 +293,16 @@ struct FormularioGasto: View {
                     }
 
                     DatePicker("Fecha", selection: $fecha, displayedComponents: .date)
+                } header: {
+                    Text("Reparto y categoría")
+                } footer: {
+                    if let texto = textoPieReparto {
+                        Text(texto)
+                    }
                 }
+            }
+            .onChange(of: modoReparto) { _, nuevo in
+                if let p = nuevo.porcentaje { porcentajePagador = p }
             }
             .navigationTitle(existente == nil ? "Nuevo gasto" : "Editar gasto")
             .navigationBarTitleDisplayMode(.inline)
@@ -286,6 +325,19 @@ struct FormularioGasto: View {
                 }
             }
         }
+    }
+
+    /// "A ti te tocan X € y a Ana Y €" según quién paga y el reparto elegido.
+    private var textoPieReparto: String? {
+        let total = equivalenteEuros
+        guard total > 0 else { return nil }
+        let pagador = pagadoPorId.isEmpty ? sesion.miId : pagadoPorId
+        let parteQuienPaga = total * porcentajePagador / 100
+        let parteOtro = total - parteQuienPaga
+        let pareja = almacen.nombreDePareja(miId: sesion.miId)
+        let miParte = pagador == sesion.miId ? parteQuienPaga : parteOtro
+        let suParte = total - miParte
+        return "Te tocan \(miParte.formatoDivisa()) y a \(pareja) \(suParte.formatoDivisa())."
     }
 
     private var textoPieTasa: String {
@@ -316,6 +368,7 @@ struct FormularioGasto: View {
         g.pagadoPorId = pagadoPorId.isEmpty ? sesion.miId : pagadoPorId
         g.categoria = categoria
         g.fecha = fecha
+        g.porcentajePagador = min(max(porcentajePagador, 0), 100)
         almacen.guardar(g, en: .gastos)
         dismiss()
     }

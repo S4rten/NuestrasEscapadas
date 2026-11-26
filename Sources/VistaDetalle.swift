@@ -61,6 +61,7 @@ struct DetalleEscapadaView: View {
     @State private var pestana: PestanaDetalle = .plan
     @State private var hoja: HojaDetalle? = nil
     @State private var confirmandoBorrado = false
+    @ObservedObject private var red = MonitorConexion.compartido
 
     var body: some View {
         if let escapada = almacen.escapada(escapadaId) {
@@ -77,6 +78,14 @@ struct DetalleEscapadaView: View {
         let pestanasVisibles = PestanaDetalle.allCases.filter { $0 != .recuerdo || e.yaVivida }
 
         List {
+            if !red.hayConexion || almacen.subidaRetrasada {
+                Section {
+                    BannerSinConexion()
+                        .listRowInsets(EdgeInsets())
+                        .listRowBackground(Color.clear)
+                }
+            }
+
             Section {
                 cabecera(e, oculto: oculto)
             }

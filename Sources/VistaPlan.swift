@@ -17,12 +17,25 @@ struct PlanSecciones: View {
     @State private var hora = Date().conHora(11)
     @State private var soloPendientes = false
 
+    /// Modo "Hoy": si estáis de viaje, el Plan se abre directamente en el día de hoy.
+    init(escapada: Escapada, hoja: Binding<HojaDetalle?>) {
+        self.escapada = escapada
+        self._hoja = hoja
+        self._dia = State(initialValue: escapada.diaDeHoy ?? 1)
+    }
+
     /// Si cambian las fechas del viaje, el día seleccionado nunca se sale de rango.
     private var diaActivo: Int {
         min(max(dia, 1), escapada.totalDias)
     }
 
     var body: some View {
+        if escapada.diaDeHoy == diaActivo {
+            SeccionAhora(escapada: escapada)
+        }
+
+        SeccionTiempoDia(escapada: escapada, dia: diaActivo)
+
         Section {
             if escapada.totalDias > 1 {
                 selectorDias
@@ -83,6 +96,8 @@ struct PlanSecciones: View {
         }
 
         SeccionGastosDelDia(escapada: escapada, dia: diaActivo, hoja: $hoja)
+
+        SeccionDiarioDia(escapada: escapada, dia: diaActivo)
     }
 
     // MARK: Selector de día
@@ -96,7 +111,7 @@ struct PlanSecciones: View {
                         dia = d
                     } label: {
                         VStack(spacing: 2) {
-                            Text("Día \(d)")
+                            Text(escapada.diaDeHoy == d ? "Hoy" : "Día \(d)")
                                 .font(.caption.bold())
                             Text(escapada.fechaParaDia(d).formatted(.dateTime.day().month(.abbreviated)))
                                 .font(.caption2)
@@ -139,8 +154,18 @@ struct PlanSecciones: View {
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
-                if let enlace = evento.enlace {
-                    BotonEnlace(titulo: "Abrir enlace", url: enlace)
+                if evento.enlace != nil || evento.ruta != nil {
+                    HStack(spacing: 6) {
+                        if let enlace = evento.enlace {
+                            BotonEnlace(titulo: "Abrir enlace", url: enlace)
+                        }
+                        if let ruta = evento.ruta {
+                            BotonEnlace(titulo: "Cómo llegar", url: ruta, icono: "map.fill")
+                        }
+                    }
+                }
+                if let actividadId = evento.actividadId {
+                    BotonesVoto(coleccion: .actividades, id: actividadId, votos: evento.votos)
                 }
             }
 
@@ -186,89 +211,7 @@ struct PlanSecciones: View {
     }
 
     private func construirEventos() -> [EventoLinea] {
-        let calendario = Calendar.current
-        let fecha = escapada.fechaParaDia(diaActivo)
-        var lista: [EventoLinea] = []
-
-        for v in almacen.vuelosDe(escapada.id) where calendario.isDate(v.fechaHoraSalida, inSameDayAs: fecha) {
-            let detalles = [v.aerolinea, v.numeroVuelo, v.terminalPuerta].filter { !$0.isEmpty }
-            lista.append(EventoLinea(
-                id: "vuelo-\(v.id)",
-                hora: v.fechaHoraSalida,
-                titulo: "\(v.origen) → \(v.destino)",
-                subtitulo: detalles.joined(separator: " · "),
-                icono: "✈️",
-                actividadId: nil,
-                completada: false,
-                enlace: urlDesdeTexto(v.urlReserva)
-            ))
-        }
-
-        for t in almacen.trenesDe(escapada.id) where calendario.isDate(t.fechaHoraSalida, inSameDayAs: fecha) {
-            lista.append(EventoLinea(
-                id: "tren-\(t.id)",
-                hora: t.fechaHoraSalida,
-                titulo: "\(t.estacionOrigen) → \(t.estacionDestino)",
-                subtitulo: "\(t.operadora) · \(t.trayecto)",
-                icono: "🚂",
-                actividadId: nil,
-                completada: false,
-                enlace: urlDesdeTexto(t.urlReserva)
-            ))
-        }
-
-        for a in almacen.alojamientosDe(escapada.id) {
-            let nombreAloj = a.nombre.isEmpty ? "Alojamiento" : a.nombre
-            if calendario.isDate(a.entrada, inSameDayAs: fecha) {
-                lista.append(EventoLinea(
-                    id: "entrada-\(a.id)",
-                    hora: a.entrada,
-                    titulo: "Check-in: \(nombreAloj)",
-                    subtitulo: a.direccion,
-                    icono: "🔑",
-                    actividadId: nil,
-                    completada: false,
-                    enlace: urlDesdeTexto(a.urlReserva)
-                ))
-            }
-            if calendario.isDate(a.salida, inSameDayAs: fecha) {
-                lista.append(EventoLinea(
-                    id: "salida-\(a.id)",
-                    hora: a.salida,
-                    titulo: "Check-out: \(nombreAloj)",
-                    subtitulo: a.direccion,
-                    icono: "🧳",
-                    actividadId: nil,
-                    completada: false,
-                    enlace: urlDesdeTexto(a.urlReserva)
-                ))
-            }
-        }
-
-        for actividad in almacen.actividadesDe(escapada.id) where actividad.dia == diaActivo {
-            lista.append(EventoLinea(
-                id: "actividad-\(actividad.id)",
-                hora: actividad.hora,
-                titulo: actividad.nombreSitio,
-                subtitulo: actividad.hora == nil ? "Sin hora fija" : "Plan del día",
-                icono: "📍",
-                actividadId: actividad.id,
-                completada: actividad.completada,
-                enlace: urlDesdeTexto(actividad.urlSitio)
-            ))
-        }
-
-        return lista.sorted { a, b in
-            switch (a.hora, b.hora) {
-            case let (x?, y?):
-                return x < y
-            case (_?, nil):
-                return true
-            case (nil, _?):
-                return false
-            case (nil, nil):
-                return a.titulo < b.titulo
-            }
-        }
+        // Lógica compartida con el modo "Hoy" e Inicio (ver VistaHoy.swift).
+        almacen.eventos(de: escapada, dia: diaActivo)
     }
 }

@@ -48,6 +48,8 @@ struct NuevaEscapadaView: View {
     @Environment(\.dismiss) private var dismiss
 
     let existente: Escapada?
+    /// Para crear una escapada desde una fecha especial (aniversario, cumpleaños…).
+    var fechaSugerida: Date? = nil
 
     @State private var titulo = ""
     @State private var destino = ""
@@ -61,6 +63,7 @@ struct NuevaEscapadaView: View {
     @State private var pista = ""
     @State private var diasRevelar = 0
     @State private var presupuestoTexto = ""
+    @State private var paisCodigo = ""
 
     @State private var destinoConfirmado = ""
     @State private var mostrarSugerencias = false
@@ -127,6 +130,7 @@ struct NuevaEscapadaView: View {
                             } else {
                                 latitud = nil
                                 longitud = nil
+                                paisCodigo = ""
                                 mostrarSugerencias = true
                                 buscador.buscar(nuevo)
                             }
@@ -240,7 +244,13 @@ struct NuevaEscapadaView: View {
     private func cargarSiHaceFalta() {
         guard !cargado else { return }
         cargado = true
-        guard let e = existente else { return }
+        guard let e = existente else {
+            if let f = fechaSugerida {
+                inicio = f
+                fin = f.sumando(dias: 2)
+            }
+            return
+        }
         titulo = e.titulo
         destinoConfirmado = e.destino
         destino = e.destino
@@ -254,6 +264,7 @@ struct NuevaEscapadaView: View {
         pista = e.pistaSorpresa
         diasRevelar = e.diasRevelarAntes
         presupuestoTexto = e.tienePresupuesto ? textoImporte(e.presupuesto) : ""
+        paisCodigo = e.paisCodigo
     }
 
     private func textoImporte(_ valor: Double) -> String {
@@ -271,6 +282,7 @@ struct NuevaEscapadaView: View {
                destino == destinoConfirmado {
                 latitud = item.placemark.coordinate.latitude
                 longitud = item.placemark.coordinate.longitude
+                paisCodigo = item.placemark.isoCountryCode ?? ""
                 if let moneda = Divisas.codigoParaPais(item.placemark.isoCountryCode) {
                     divisa = moneda
                 }
@@ -284,6 +296,7 @@ struct NuevaEscapadaView: View {
             var lat = latitud
             var lon = longitud
             var moneda = divisa
+            var pais = paisCodigo
             let destinoLimpio = destino.recortado
 
             // Si no se eligió ninguna sugerencia, intentamos localizar el destino escrito a mano.
@@ -294,6 +307,7 @@ struct NuevaEscapadaView: View {
                     lat = ubicacion.coordinate.latitude
                     lon = ubicacion.coordinate.longitude
                     if let d = Divisas.codigoParaPais(marca.isoCountryCode) { moneda = d }
+                    if let iso = marca.isoCountryCode { pais = iso }
                 }
             }
 
@@ -323,6 +337,11 @@ struct NuevaEscapadaView: View {
                 if puedeEditarPresupuesto, let p = presupuesto {
                     campos["presupuesto"] = p
                 }
+                if !pais.isEmpty {
+                    campos["paisCodigo"] = pais
+                } else if destinoLimpio != e.destino {
+                    campos["paisCodigo"] = ""   // destino nuevo sin localizar: no dejar el país antiguo
+                }
                 almacen.actualizar(e.id, en: .escapadas, campos: campos)
             } else {
                 var nueva = Escapada()
@@ -340,6 +359,7 @@ struct NuevaEscapadaView: View {
                 nueva.creadaPorId = sesion.miId
                 nueva.creadaEn = Date()
                 nueva.presupuesto = presupuesto ?? 0
+                nueva.paisCodigo = pais
                 almacen.guardar(nueva, en: .escapadas)
             }
             dismiss()

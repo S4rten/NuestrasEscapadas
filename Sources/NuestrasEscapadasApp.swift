@@ -1,5 +1,6 @@
 import SwiftUI
 import FirebaseCore
+import FirebaseFirestore
 
 @main
 struct NuestrasEscapadasApp: App {
@@ -12,6 +13,11 @@ struct NuestrasEscapadasApp: App {
         if Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist") != nil {
             if FirebaseApp.app() == nil {
                 FirebaseApp.configure()
+                // Copia local más grande (300 MB) para que viajes y fotos estén disponibles sin conexión.
+                // Debe hacerse antes de usar Firestore por primera vez.
+                let ajustes = Firestore.firestore().settings
+                ajustes.cacheSettings = PersistentCacheSettings(sizeBytes: NSNumber(value: 300 * 1024 * 1024))
+                Firestore.firestore().settings = ajustes
             }
             firebaseListo = true
         } else {

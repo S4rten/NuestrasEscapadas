@@ -36,6 +36,30 @@ final class Almacen: ObservableObject {
     @Published private(set) var actividades: [Actividad] = []
     @Published private(set) var ideas: [Idea] = []
     @Published private(set) var retos: [Reto] = []
+    @Published private(set) var diarios: [DiarioDia] = []
+    @Published private(set) var pagos: [PagoPareja] = []
+    @Published private(set) var fechasEspeciales: [FechaEspecial] = []
+    /// true mientras haya cambios guardados en este iPhone que aún no han llegado a la nube.
+    @Published private(set) var cambiosPendientes = false {
+        didSet { programarAvisoSubida() }
+    }
+    /// Como `cambiosPendientes`, pero solo si llevan más de 3 s sin subir
+    /// (así el aviso no parpadea con cada cambio normal hecho con conexión).
+    @Published private(set) var subidaRetrasada = false
+    private var tareaAvisoSubida: Task<Void, Never>? = nil
+
+    private func programarAvisoSubida() {
+        tareaAvisoSubida?.cancel()
+        guard cambiosPendientes else {
+            if subidaRetrasada { subidaRetrasada = false }
+            return
+        }
+        tareaAvisoSubida = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            guard !Task.isCancelled, let self = self, self.cambiosPendientes else { return }
+            self.subidaRetrasada = true
+        }
+    }
     /// Fotos de retos ya descargadas, por `Reto.claveFoto`. Solo se bajan cuando se ven.
     @Published private(set) var fotosDescargadas: [String: Data] = [:]
     @Published private(set) var miembros: [Miembro] = []
@@ -45,6 +69,7 @@ final class Almacen: ObservableObject {
     private var listeners: [ListenerRegistration] = []
     private var codigo = ""
     private var fotosEnDescarga: Set<String> = []
+    private var pendientesPorColeccion: [String: Bool] = [:]
 
     // MARK: Conexión
 
@@ -69,6 +94,9 @@ final class Almacen: ObservableObject {
         escuchar(.actividades, en: base, destino: \Almacen.actividades)
         escuchar(.ideas, en: base, destino: \Almacen.ideas)
         escuchar(.retos, en: base, destino: \Almacen.retos)
+        escuchar(.diarios, en: base, destino: \Almacen.diarios)
+        escuchar(.pagos, en: base, destino: \Almacen.pagos)
+        escuchar(.fechasEspeciales, en: base, destino: \Almacen.fechasEspeciales)
         escucharMiembros(en: base)
     }
 
@@ -85,6 +113,11 @@ final class Almacen: ObservableObject {
         actividades = []
         ideas = []
         retos = []
+        diarios = []
+        pagos = []
+        fechasEspeciales = []
+        pendientesPorColeccion = [:]
+        cambiosPendientes = false
         fotosDescargadas = [:]
         fotosEnDescarga = []
         miembros = []
@@ -97,12 +130,18 @@ final class Almacen: ObservableObject {
         en base: DocumentReference,
         destino: ReferenceWritableKeyPath<Almacen, [T]>
     ) {
-        let registro = base.collection(coleccion.rawValue).addSnapshotListener { [weak self] snapshot, error in
+        // includeMetadataChanges: también avisa cuando un cambio hecho sin conexión llega a la nube.
+        let registro = base.collection(coleccion.rawValue).addSnapshotListener(includeMetadataChanges: true) { [weak self] snapshot, error in
             Task { @MainActor in
                 guard let self = self else { return }
                 if let error = error {
                     self.estado = .error("Error de sincronización: \(error.localizedDescription)")
                     return
+                }
+                if let metadatos = snapshot?.metadata {
+                    self.pendientesPorColeccion[coleccion.rawValue] = metadatos.hasPendingWrites
+                    let hayPendientes = self.pendientesPorColeccion.values.contains(true)
+                    if hayPendientes != self.cambiosPendientes { self.cambiosPendientes = hayPendientes }
                 }
                 guard let documentos = snapshot?.documents else { return }
                 var elementos: [T] = []
@@ -222,6 +261,24 @@ final class Almacen: ObservableObject {
         retos.first(where: { $0.id == id })
     }
 
+    func diario(de escapadaId: String, dia: Int) -> DiarioDia? {
+        let id = DiarioDia.idPara(escapadaId: escapadaId, dia: dia)
+        return diarios.first(where: { $0.id == id })
+    }
+
+    func diariosDe(_ id: String) -> [DiarioDia] {
+        diarios.filter { $0.escapadaId == id }.sorted { $0.dia < $1.dia }
+    }
+
+    func pagosDe(_ id: String) -> [PagoPareja] {
+        pagos.filter { $0.escapadaId == id }.sorted { $0.fecha > $1.fecha }
+    }
+
+    /// Fechas especiales ordenadas por la próxima vez que tocan.
+    var fechasEspecialesOrdenadas: [FechaEspecial] {
+        fechasEspeciales.sorted { ($0.diasHasta() ?? Int.max) < ($1.diasHasta() ?? Int.max) }
+    }
+
     func totalGastado(_ id: String) -> Double {
         gastosDe(id).reduce(0) { $0 + $1.importe }
     }
@@ -270,6 +327,28 @@ final class Almacen: ObservableObject {
         }
     }
 
+    /// Crea el documento si no existe o cambia solo esos campos si ya existe.
+    func guardarCampos(_ id: String, en coleccion: Coleccion, campos: [String: Any]) {
+        guard !codigo.isEmpty else { return }
+        referencia(coleccion, id).setData(campos, merge: true) { [weak self] error in
+            if let error = error {
+                Task { @MainActor in self?.registrarFallo(error, "guardar") }
+            }
+        }
+    }
+
+    /// Guarda el voto de una persona (1 = 👍, -1 = 👎, nil = quitar el voto) sin tocar el del otro.
+    func votar(_ id: String, en coleccion: Coleccion, miId: String, valor: Int?) {
+        guard !codigo.isEmpty else { return }
+        let campo = FieldPath(["votos", miId])
+        let nuevo: Any = valor.map { $0 as Any } ?? FieldValue.delete()
+        referencia(coleccion, id).updateData([campo: nuevo]) { [weak self] error in
+            if let error = error {
+                Task { @MainActor in self?.registrarFallo(error, "votar") }
+            }
+        }
+    }
+
     func borrar(id: String, de coleccion: Coleccion) {
         guard !codigo.isEmpty else { return }
         referencia(coleccion, id).delete { [weak self] error in
@@ -294,6 +373,8 @@ final class Almacen: ObservableObject {
             lote.deleteDocument(referencia(.retos, r.id))
             lote.deleteDocument(referencia(.fotos, r.id))
         }
+        for d in diarios where d.escapadaId == escapada.id { lote.deleteDocument(referencia(.diarios, d.id)) }
+        for p in pagos where p.escapadaId == escapada.id { lote.deleteDocument(referencia(.pagos, p.id)) }
         lote.deleteDocument(referencia(.escapadas, escapada.id))
         lote.commit { [weak self] error in
             if let error = error {
