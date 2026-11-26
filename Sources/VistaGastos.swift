@@ -218,6 +218,12 @@ struct FormularioGasto: View {
     var body: some View {
         NavigationStack {
             Form {
+                if existente == nil {
+                    SeccionEscanearTicket { t in
+                        aplicarTicket(t)
+                    }
+                }
+
                 Section("Detalle del gasto") {
                     TextField("Concepto (ej: Cena en el centro)", text: $concepto)
 
@@ -354,6 +360,22 @@ struct FormularioGasto: View {
             tasaTexto = textoTasa(t)
         } else {
             tasaTexto = ""
+        }
+    }
+
+    /// Rellena el formulario con lo leído del ticket (solo lo que se ha podido leer).
+    private func aplicarTicket(_ t: TicketLeido) {
+        if let importe = t.importe {
+            importeTexto = String(format: "%.2f", importe).replacingOccurrences(of: ".", with: ",")
+        }
+        if let comercio = t.comercio, concepto.recortado.isEmpty {
+            concepto = comercio
+        }
+        if let f = t.fecha, escapada.diaDelViaje(para: f) != nil {
+            fecha = f
+        }
+        if let c = t.categoria {
+            categoria = c
         }
     }
 

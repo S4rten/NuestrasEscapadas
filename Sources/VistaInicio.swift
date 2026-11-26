@@ -185,6 +185,11 @@ struct ProximasView: View {
                     }
                     .padding(.top, 40)
                 }
+
+                // Hucha común para el próximo viaje.
+                if almacen.escapadasCargadas {
+                    TarjetaHucha()
+                }
             }
             .padding()
         }

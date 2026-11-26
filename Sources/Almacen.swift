@@ -43,6 +43,9 @@ final class Almacen: ObservableObject {
     @Published private(set) var accesos: [Acceso] = []
     @Published private(set) var novedades: [Novedad] = []
     @Published private(set) var billetes: [Billete] = []
+    @Published private(set) var opciones: [Opcion] = []
+    @Published private(set) var huchas: [Hucha] = []
+    @Published private(set) var aportaciones: [Aportacion] = []
     /// Imágenes de billetes ya descargadas, por ID. Solo se bajan cuando se ven.
     @Published private(set) var billetesDescargados: [String: Data] = [:]
     /// true si el espacio no admite iPhones nuevos (se cambia en Ajustes).
@@ -191,6 +194,9 @@ final class Almacen: ObservableObject {
         escuchar(.accesos, en: base, destino: \Almacen.accesos)
         escuchar(.novedades, en: base, destino: \Almacen.novedades)
         escuchar(.billetes, en: base, destino: \Almacen.billetes)
+        escuchar(.opciones, en: base, destino: \Almacen.opciones)
+        escuchar(.huchas, en: base, destino: \Almacen.huchas)
+        escuchar(.aportaciones, en: base, destino: \Almacen.aportaciones)
         escucharMiembros(en: base)
     }
 
@@ -213,6 +219,9 @@ final class Almacen: ObservableObject {
         accesos = []
         novedades = []
         billetes = []
+        opciones = []
+        huchas = []
+        aportaciones = []
         billetesDescargados = [:]
         billetesEnDescarga = []
         espacioCerrado = false
@@ -380,6 +389,49 @@ final class Almacen: ObservableObject {
         pagos.filter { $0.escapadaId == id }.sorted { $0.fecha > $1.fecha }
     }
 
+    func opcionesDe(_ id: String) -> [Opcion] {
+        opciones.filter { $0.escapadaId == id }.sorted { $0.creadoEn < $1.creadoEn }
+    }
+
+    func aportacionesDe(hucha id: String) -> [Aportacion] {
+        aportaciones.filter { $0.huchaId == id }.sorted { $0.fecha > $1.fecha }
+    }
+
+    func ahorrado(en hucha: Hucha) -> Double {
+        aportaciones.filter { $0.huchaId == hucha.id }.reduce(0) { $0 + $1.importe }
+    }
+
+    /// Borra la hucha y todas sus aportaciones.
+    func borrarHucha(_ hucha: Hucha) {
+        guard !codigo.isEmpty else { return }
+        let lote = Firestore.firestore().batch()
+        for a in aportaciones where a.huchaId == hucha.id { lote.deleteDocument(referencia(.aportaciones, a.id)) }
+        lote.deleteDocument(referencia(.huchas, hucha.id))
+        lote.commit { [weak self] error in
+            if let error = error {
+                Task { @MainActor in self?.registrarFallo(error, "borrar la hucha") }
+            }
+        }
+    }
+
+    /// Marca una opción como la elegida de su tipo (y quita la marca a las demás de ese tipo).
+    func elegirOpcion(_ opcion: Opcion, elegida: Bool) {
+        guard !codigo.isEmpty else { return }
+        let lote = Firestore.firestore().batch()
+        if elegida {
+            for o in opciones where o.escapadaId == opcion.escapadaId && o.tipo == opcion.tipo && o.id != opcion.id && o.elegida {
+                lote.updateData(["elegida": false], forDocument: referencia(.opciones, o.id))
+            }
+            anotarNovedad(icono: "✅", texto: "eligió la opción \(opcion.titulo)", escapadaId: opcion.escapadaId)
+        }
+        lote.updateData(["elegida": elegida], forDocument: referencia(.opciones, opcion.id))
+        lote.commit { [weak self] error in
+            if let error = error {
+                Task { @MainActor in self?.registrarFallo(error, "elegir la opción") }
+            }
+        }
+    }
+
     /// Fechas especiales ordenadas por la próxima vez que tocan.
     var fechasEspecialesOrdenadas: [FechaEspecial] {
         fechasEspeciales.sorted { ($0.diasHasta() ?? Int.max) < ($1.diasHasta() ?? Int.max) }
@@ -488,6 +540,7 @@ final class Almacen: ObservableObject {
             lote.deleteDocument(referencia(.billetes, b.id))
             lote.deleteDocument(referencia(.billetesDatos, b.id))
         }
+        for o in opciones where o.escapadaId == escapada.id { lote.deleteDocument(referencia(.opciones, o.id)) }
         lote.deleteDocument(referencia(.escapadas, escapada.id))
         lote.commit { [weak self] error in
             if let error = error {
@@ -683,6 +736,9 @@ final class Almacen: ObservableObject {
         case .accesos: return accesos.contains { $0.id == id }
         case .novedades: return novedades.contains { $0.id == id }
         case .billetes: return billetes.contains { $0.id == id }
+        case .opciones: return opciones.contains { $0.id == id }
+        case .huchas: return huchas.contains { $0.id == id }
+        case .aportaciones: return aportaciones.contains { $0.id == id }
         case .fotos, .billetesDatos: return false
         }
     }
@@ -714,6 +770,16 @@ final class Almacen: ObservableObject {
             return ("💝", "añadió la fecha especial \(f.emoji) \(f.titulo)", "")
         case let d as Deseo:
             return ("⭐️", "añadió a la wishlist: \(d.titulo)", "")
+        case let o as Opcion:
+            let precio = o.precio > 0 ? " (\(o.precio.formatoDivisa()))" : ""
+            return ("⚖️", "propuso una opción: \(o.titulo)\(precio)", o.escapadaId)
+        case let h as Hucha:
+            return ("🐷", "creó la hucha \(h.emoji) \(h.titulo)", "")
+        case let a as Aportacion:
+            if a.importe >= 0 {
+                return ("🐷", "metió \(a.importe.formatoDivisa()) en la hucha", "")
+            }
+            return ("🐷", "sacó \((-a.importe).formatoDivisa()) de la hucha", "")
         default:
             return nil
         }

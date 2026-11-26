@@ -27,11 +27,16 @@ struct CopiaSeguridad: Codable {
     /// Imágenes (opcional): ID del reto o del billete -> JPEG.
     var fotos: [String: Data] = [:]
     var imagenesBilletes: [String: Data] = [:]
+    // Opcionales: así las copias hechas antes de existir se siguen pudiendo abrir.
+    var opciones: [Opcion]? = nil
+    var huchas: [Hucha]? = nil
+    var aportaciones: [Aportacion]? = nil
 
     var totalElementos: Int {
         escapadas.count + vuelos.count + trenes.count + alojamientos.count + gastos.count
             + checklist.count + actividades.count + ideas.count + retos.count + pagos.count
             + fechasEspeciales.count + deseos.count + billetes.count
+            + (opciones?.count ?? 0) + (huchas?.count ?? 0) + (aportaciones?.count ?? 0)
     }
 
     static func codificador() -> JSONEncoder {
@@ -84,6 +89,9 @@ extension Almacen {
         c.fechasEspeciales = fechasEspeciales
         c.deseos = deseos
         c.billetes = billetes
+        c.opciones = opciones
+        c.huchas = huchas
+        c.aportaciones = aportaciones
         if conImagenes {
             for r in retos where r.completado {
                 if let datos = await descargarDatos(.fotos, id: r.id) { c.fotos[r.id] = datos }
@@ -115,6 +123,9 @@ extension Almacen {
         recuperar(c.pagos, .pagos)
         recuperar(c.fechasEspeciales, .fechasEspeciales)
         recuperar(c.deseos, .deseos)
+        recuperar(c.opciones ?? [], .opciones)
+        recuperar(c.huchas ?? [], .huchas)
+        recuperar(c.aportaciones ?? [], .aportaciones)
 
         // Retos y billetes: con su imagen si venía en la copia.
         for r in c.retos where !existe(r.id, en: .retos) {

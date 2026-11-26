@@ -78,6 +78,11 @@ struct YaVividoView: View {
                     } label: {
                         Label("Estadísticas y países visitados", systemImage: "chart.bar.fill")
                     }
+                    NavigationLink {
+                        FavoritosView()
+                    } label: {
+                        Label("Vuestros sitios favoritos", systemImage: "star.fill")
+                    }
                 }
 
                 if !podio.isEmpty {

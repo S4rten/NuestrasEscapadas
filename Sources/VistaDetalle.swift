@@ -7,6 +7,7 @@ import SwiftUI
 enum PestanaDetalle: String, CaseIterable, Identifiable {
     case plan = "Plan"
     case reservas = "Reservas"
+    case opciones = "Opciones"
     case lista = "Lista"
     case gastos = "Gastos"
     case retos = "Retos"
@@ -18,6 +19,7 @@ enum PestanaDetalle: String, CaseIterable, Identifiable {
         switch self {
         case .plan: return "calendar.day.timeline.left"
         case .reservas: return "ticket.fill"
+        case .opciones: return "scalemass.fill"
         case .lista: return "checklist"
         case .gastos: return "eurosign.circle.fill"
         case .retos: return "camera.fill"
@@ -123,7 +125,10 @@ struct DetalleEscapadaView: View {
                     PlanSecciones(escapada: e, hoja: $hoja)
                 case .reservas:
                     ReservasSecciones(escapada: e, hoja: $hoja)
+                case .opciones:
+                    OpcionesSecciones(escapada: e, hoja: $hoja)
                 case .lista:
+                    SeccionFichaPais(escapada: e)
                     ListaSecciones(escapada: e, mostrarIdeas: true)
                 case .gastos:
                     GastosSecciones(escapada: e, hoja: $hoja)

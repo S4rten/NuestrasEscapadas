@@ -74,6 +74,7 @@ enum Coleccion: String, CaseIterable {
     case pagos, fechasEspeciales
     case deseos
     case accesos, novedades, billetes, billetesDatos
+    case opciones, huchas, aportaciones
 }
 
 struct Miembro: Identifiable, Hashable {
@@ -313,9 +314,11 @@ struct Alojamiento: Identifiable, Codable {
     var salida: Date = Date()               // fecha y hora de check-out
     var codigoReserva: String = ""
     var urlReserva: String = ""
+    var estrellas: Int = 0                  // valoración al volver (0 = sin valorar)
 
     enum CodingKeys: String, CodingKey {
         case id, escapadaId, nombre, direccion, entrada, salida, codigoReserva, urlReserva
+        case estrellas
     }
 }
 
@@ -330,6 +333,7 @@ extension Alojamiento {
         salida = c.valor(.salida, Date())
         codigoReserva = c.valor(.codigoReserva, "")
         urlReserva = c.valor(.urlReserva, "")
+        estrellas = c.valor(.estrellas, 0)
     }
 }
 
@@ -436,11 +440,15 @@ struct Actividad: Identifiable, Codable {
     var latitud: Double? = nil              // posición en el mapa del día (se busca sola por el nombre)
     var longitud: Double? = nil
     var ubicacionBuscada: Bool = false      // true si ya se buscó (aunque no se encontrara)
+    var ambiente: String = ""               // "interior", "exterior" o "" (se adivina por el nombre)
+    var estrellas: Int = 0                  // valoración al volver (0 = sin valorar)
+    var repetiriamos: Bool = false
 
     enum CodingKeys: String, CodingKey {
         case id, escapadaId, dia, nombreSitio, urlSitio, hora, completada, creadaEn
         case todoElDia
         case latitud, longitud, ubicacionBuscada
+        case ambiente, estrellas, repetiriamos
     }
 }
 
@@ -459,6 +467,9 @@ extension Actividad {
         latitud = try? c.decodeIfPresent(Double.self, forKey: .latitud)
         longitud = try? c.decodeIfPresent(Double.self, forKey: .longitud)
         ubicacionBuscada = c.valor(.ubicacionBuscada, false)
+        ambiente = c.valor(.ambiente, "")
+        estrellas = c.valor(.estrellas, 0)
+        repetiriamos = c.valor(.repetiriamos, false)
     }
 }
 
@@ -656,6 +667,136 @@ extension Novedad {
         icono = c.valor(.icono, "✨")
         texto = c.valor(.texto, "")
         escapadaId = c.valor(.escapadaId, "")
+        fecha = c.valor(.fecha, Date())
+    }
+}
+
+// ============================================================================
+// OPCIONES: candidatos antes de reservar (2-3 hoteles, vuelos…) para votar.
+// ============================================================================
+
+enum TipoOpcion: String, CaseIterable, Identifiable {
+    case alojamiento, vuelo, tren, coche, actividad, otro
+
+    var id: String { rawValue }
+
+    var emoji: String {
+        switch self {
+        case .alojamiento: return "🛏️"
+        case .vuelo: return "✈️"
+        case .tren: return "🚂"
+        case .coche: return "🚗"
+        case .actividad: return "🎟️"
+        case .otro: return "💫"
+        }
+    }
+
+    var nombre: String {
+        switch self {
+        case .alojamiento: return "Alojamiento"
+        case .vuelo: return "Vuelo"
+        case .tren: return "Tren"
+        case .coche: return "Coche de alquiler"
+        case .actividad: return "Actividad o entrada"
+        case .otro: return "Otro"
+        }
+    }
+
+    /// Las que se pueden pasar a Reservas con un toque.
+    var vaAReservas: Bool { self == .alojamiento || self == .vuelo || self == .tren }
+}
+
+struct Opcion: Identifiable, Codable {
+    var id: String = nuevoId()
+    var escapadaId: String = ""
+    var tipo: String = TipoOpcion.alojamiento.rawValue
+    var titulo: String = ""
+    var precio: Double = 0                  // en euros; 0 = sin precio
+    var enlace: String = ""
+    var notas: String = ""
+    var votos: [String: Int] = [:]          // ID del miembro -> 1 o -1
+    var elegida: Bool = false
+    var creadoPorId: String = ""
+    var creadoEn: Date = Date()
+
+    enum CodingKeys: String, CodingKey {
+        case id, escapadaId, tipo, titulo, precio, enlace, notas, votos, elegida, creadoPorId, creadoEn
+    }
+
+    var tipoOpcion: TipoOpcion { TipoOpcion(rawValue: tipo) ?? .otro }
+}
+
+extension Opcion {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = c.valor(.id, nuevoId())
+        escapadaId = c.valor(.escapadaId, "")
+        tipo = c.valor(.tipo, TipoOpcion.otro.rawValue)
+        titulo = c.valor(.titulo, "")
+        precio = c.valor(.precio, 0.0)
+        enlace = c.valor(.enlace, "")
+        notas = c.valor(.notas, "")
+        votos = c.valor(.votos, [String: Int]())
+        elegida = c.valor(.elegida, false)
+        creadoPorId = c.valor(.creadoPorId, "")
+        creadoEn = c.valor(.creadoEn, Date())
+    }
+}
+
+// ============================================================================
+// HUCHA: ahorro común con objetivo ("Japón: 3.000 €") y aportaciones de cada uno.
+// ============================================================================
+
+struct Hucha: Identifiable, Codable {
+    var id: String = nuevoId()
+    var titulo: String = ""
+    var emoji: String = "🐷"
+    var objetivo: Double = 0                // en euros
+    var fechaObjetivo: Date? = nil          // opcional: para cuándo lo queréis
+    var creadaPorId: String = ""
+    var creadaEn: Date = Date()
+    var cerrada: Bool = false               // ya se usó (o se abandonó)
+
+    enum CodingKeys: String, CodingKey {
+        case id, titulo, emoji, objetivo, fechaObjetivo, creadaPorId, creadaEn, cerrada
+    }
+}
+
+extension Hucha {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = c.valor(.id, nuevoId())
+        titulo = c.valor(.titulo, "")
+        emoji = c.valor(.emoji, "🐷")
+        objetivo = c.valor(.objetivo, 0.0)
+        fechaObjetivo = try? c.decodeIfPresent(Date.self, forKey: .fechaObjetivo)
+        creadaPorId = c.valor(.creadaPorId, "")
+        creadaEn = c.valor(.creadaEn, Date())
+        cerrada = c.valor(.cerrada, false)
+    }
+}
+
+struct Aportacion: Identifiable, Codable {
+    var id: String = nuevoId()
+    var huchaId: String = ""
+    var autorId: String = ""
+    var importe: Double = 0                 // en euros (negativo = se sacó dinero)
+    var nota: String = ""
+    var fecha: Date = Date()
+
+    enum CodingKeys: String, CodingKey {
+        case id, huchaId, autorId, importe, nota, fecha
+    }
+}
+
+extension Aportacion {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = c.valor(.id, nuevoId())
+        huchaId = c.valor(.huchaId, "")
+        autorId = c.valor(.autorId, "")
+        importe = c.valor(.importe, 0.0)
+        nota = c.valor(.nota, "")
         fecha = c.valor(.fecha, Date())
     }
 }

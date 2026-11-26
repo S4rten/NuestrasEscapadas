@@ -17,6 +17,7 @@ struct PlanSecciones: View {
     @State private var todoElDia = false
     @State private var hora = Date().conHora(11)
     @State private var soloPendientes = false
+    @State private var ambiente = ""
 
     /// Modo "Hoy": si estáis de viaje, el Plan se abre directamente en el día de hoy.
     init(escapada: Escapada, hoja: Binding<HojaDetalle?>) {
@@ -36,6 +37,8 @@ struct PlanSecciones: View {
         }
 
         SeccionTiempoDia(escapada: escapada, dia: diaActivo)
+
+        SeccionPlanB(escapada: escapada, dia: diaActivo)
 
         Section {
             if escapada.totalDias > 1 {
@@ -60,6 +63,12 @@ struct PlanSecciones: View {
                 }
             }
 
+            Picker("Si llueve", selection: $ambiente) {
+                Text("Adivinar por el nombre").tag("")
+                Text("🏠 Es de interior").tag(Ambiente.interior)
+                Text("🌳 Es al aire libre").tag(Ambiente.exterior)
+            }
+
             TextField("Enlace opcional", text: $url)
                 .keyboardType(.URL)
                 .textInputAutocapitalization(.never)
@@ -74,7 +83,7 @@ struct PlanSecciones: View {
         } header: {
             Text(escapada.totalDias > 1 ? "Añadir al día \(diaActivo)" : "Añadir un plan")
         } footer: {
-            Text("«Ocupa todo el día» es para planes como un parque de atracciones o una excursión: se queda fijo arriba del día.")
+            Text("«Ocupa todo el día» es para planes como un parque de atracciones o una excursión: se queda fijo arriba del día. «Si llueve» sirve para proponeros un plan B cuando el día venga con lluvia.")
         }
 
         Section {
@@ -90,8 +99,14 @@ struct PlanSecciones: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
-                ForEach(visibles) { evento in
+                ForEach(Array(visibles.enumerated()), id: \.element.id) { i, evento in
                     fila(evento)
+                    // Cuánto se tarda hasta el siguiente plan (si los dos están en el mapa).
+                    if i + 1 < visibles.count,
+                       let a = actividad(evento), let b = actividad(visibles[i + 1]),
+                       !a.todoElDia, !b.todoElDia {
+                        FilaTrayecto(desde: a, hasta: b)
+                    }
                 }
             }
         } header: {
@@ -158,10 +173,17 @@ struct PlanSecciones: View {
             .frame(width: 52)
 
             VStack(alignment: .leading, spacing: 4) {
-                Text("\(evento.icono) \(evento.titulo)")
-                    .font(.subheadline.weight(.medium))
-                    .strikethrough(evento.completada)
-                    .foregroundStyle(evento.completada ? Color.secondary : Color.primary)
+                HStack(spacing: 4) {
+                    Text("\(evento.icono) \(evento.titulo)")
+                        .font(.subheadline.weight(.medium))
+                        .strikethrough(evento.completada)
+                        .foregroundStyle(evento.completada ? Color.secondary : Color.primary)
+                    if let a = actividad(evento), !Ambiente.emoji(Ambiente.de(a)).isEmpty {
+                        Text(Ambiente.emoji(Ambiente.de(a)))
+                            .font(.caption2)
+                            .opacity(a.ambiente.isEmpty ? 0.5 : 1)   // más claro si es adivinado
+                    }
+                }
                 if !evento.subtitulo.isEmpty {
                     Text(evento.subtitulo)
                         .font(.caption2)
@@ -209,6 +231,28 @@ struct PlanSecciones: View {
                 } label: {
                     Label("Volver a buscar en el mapa", systemImage: "mappin.and.ellipse")
                 }
+                if let a = actividad(evento) {
+                    let actual = Ambiente.de(a)
+                    Menu {
+                        Button {
+                            almacen.actualizar(actividadId, en: .actividades, campos: ["ambiente": Ambiente.interior])
+                        } label: {
+                            Text(actual == Ambiente.interior ? "✓ 🏠 De interior" : "🏠 De interior")
+                        }
+                        Button {
+                            almacen.actualizar(actividadId, en: .actividades, campos: ["ambiente": Ambiente.exterior])
+                        } label: {
+                            Text(actual == Ambiente.exterior ? "✓ 🌳 Al aire libre" : "🌳 Al aire libre")
+                        }
+                        Button {
+                            almacen.actualizar(actividadId, en: .actividades, campos: ["ambiente": ""])
+                        } label: {
+                            Text("Adivinar por el nombre")
+                        }
+                    } label: {
+                        Label("Si llueve…", systemImage: "cloud.rain")
+                    }
+                }
             }
         }
         .swipeActions(edge: .leading) {
@@ -244,11 +288,19 @@ struct PlanSecciones: View {
         actividad.urlSitio = url.recortado
         actividad.todoElDia = todoElDia
         actividad.hora = (conHora && !todoElDia) ? escapada.fechaParaDia(diaActivo).combinando(horaDe: hora) : nil
+        actividad.ambiente = ambiente
         almacen.guardar(actividad, en: .actividades)
         nombre = ""
         url = ""
         conHora = false
         todoElDia = false
+        ambiente = ""
+    }
+
+    /// El plan (actividad) de una fila de la línea del tiempo, si lo es.
+    private func actividad(_ evento: EventoLinea) -> Actividad? {
+        guard let id = evento.actividadId else { return nil }
+        return almacen.actividades.first { $0.id == id }
     }
 
     private func construirEventos() -> [EventoLinea] {

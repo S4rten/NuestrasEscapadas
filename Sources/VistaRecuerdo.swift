@@ -43,6 +43,8 @@ struct RecuerdoSecciones: View {
             Text("Toca una estrella para puntuar; vuelve a tocar la misma para quitarla.")
         }
 
+        SeccionValorarPlanes(escapada: escapada)
+
         Section {
             EditorTextoGuardable(
                 titulo: "Nuestro momento favorito",
