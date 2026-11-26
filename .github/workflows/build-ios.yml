@@ -1,1 +1,75 @@
+name: Compilar App iOS (.ipa)
 
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-ipa:
+    runs-on: macos-15
+    timeout-minutes: 60
+
+    steps:
+      - name: Descargar codigo del repositorio
+        uses: actions/checkout@v4
+
+      - name: Comprobar que estan todos los archivos necesarios
+        run: |
+          test -f project.yml || { echo "::error::Falta project.yml en la raiz del repositorio"; exit 1; }
+          test -d Sources || { echo "::error::Falta la carpeta Sources con los archivos .swift"; exit 1; }
+          test -f GoogleService-Info.plist || { echo "::error::Falta GoogleService-Info.plist en la raiz del repositorio (descargalo de la consola de Firebase)"; exit 1; }
+          echo "BUNDLE_ID del plist:"
+          /usr/libexec/PlistBuddy -c "Print :BUNDLE_ID" GoogleService-Info.plist
+          echo "Archivos Swift:"
+          ls Sources/*.swift
+
+      - name: Instalar XcodeGen
+        run: brew install xcodegen
+
+      - name: Generar proyecto de Xcode (.xcodeproj)
+        run: xcodegen generate
+
+      - name: Versiones de herramientas
+        run: |
+          xcodebuild -version
+          xcodegen --version
+
+      - name: Compilar sin firma de desarrollador (descarga Firebase la primera vez)
+        run: |
+          xcodebuild build \
+            -project NuestrasEscapadas.xcodeproj \
+            -scheme NuestrasEscapadas \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY=""
+
+      - name: Verificar que el plist de Firebase va dentro de la app
+        run: |
+          APP="build/Build/Products/Release-iphoneos/NuestrasEscapadas.app"
+          ls "$APP" | head -30
+          test -f "$APP/GoogleService-Info.plist" || { echo "::error::El .app NO contiene GoogleService-Info.plist: la app arrancaria en modo local"; exit 1; }
+          echo "OK: GoogleService-Info.plist incluido en la app"
+
+      - name: Empaquetar archivo .ipa instalable
+        run: |
+          mkdir -p Payload
+          cp -R "build/Build/Products/Release-iphoneos/NuestrasEscapadas.app" Payload/
+          zip -qry NuestrasEscapadas.ipa Payload
+
+      - name: Subir .ipa listo para descargar
+        uses: actions/upload-artifact@v4
+        with:
+          name: NuestrasEscapadas-iOS
+          path: NuestrasEscapadas.ipa
+          retention-days: 14
