@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   build-ipa:
-    runs-on: macos-15-intel
+    runs-on: macos-15
     timeout-minutes: 60
 
     steps:
@@ -60,6 +60,8 @@ jobs:
           ls "$APP" | head -30
           test -f "$APP/GoogleService-Info.plist" || { echo "::error::El .app NO contiene GoogleService-Info.plist: la app arrancaria en modo local"; exit 1; }
           echo "OK: GoogleService-Info.plist incluido en la app"
+          /usr/libexec/PlistBuddy -c "Print :NSCalendarsWriteOnlyAccessUsageDescription" "$APP/Info.plist" || { echo "::error::Falta el permiso del Calendario en Info.plist"; exit 1; }
+          echo "OK: permiso del Calendario incluido"
 
       - name: Empaquetar archivo .ipa instalable
         run: |
