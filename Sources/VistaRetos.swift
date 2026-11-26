@@ -86,21 +86,6 @@ struct RetosSecciones: View {
                 Text("Preparad los retos ahora: las fotos se podrán hacer a partir del \(escapada.fechaInicio.formatted(date: .long, time: .omitted)).")
             }
         }
-
-        let conseguidos = retos.filter { $0.completado }
-        if !conseguidos.isEmpty {
-            Section {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 8)], spacing: 8) {
-                    ForEach(conseguidos) { reto in
-                        MiniaturaReto(reto: reto, lado: 96)
-                            .onTapGesture { hoja = .fotoReto(reto) }
-                    }
-                }
-                .padding(.vertical, 6)
-            } header: {
-                Text("Galería del viaje")
-            }
-        }
     }
 
     private func anadir(_ texto: String) {

@@ -11,8 +11,14 @@ struct InicioView: View {
     @State private var mostrandoNueva = false
     @State private var mostrandoAjustes = false
 
+    /// Pestaña visible y un contador por pestaña: al salir de una pestaña se le
+    /// cambia la identidad, así que al volver aparece cerrada desde el principio
+    /// (sin la escapada, estadística o ventana que tuvieras abierta).
+    @State private var pestana = 0
+    @State private var reinicios = [0, 0, 0]
+
     var body: some View {
-        TabView {
+        TabView(selection: $pestana) {
             NavigationStack {
                 ProximasView(mostrandoNueva: $mostrandoNueva)
                     .navigationTitle("Escapadas")
@@ -40,19 +46,30 @@ struct InicioView: View {
                         }
                     }
             }
+            .id(reinicios[0])
             .tabItem { Label("Próximas", systemImage: "calendar") }
+            .tag(0)
 
             NavigationStack {
                 MapaView()
                     .navigationTitle("Nuestro mapa")
             }
+            .id(reinicios[1])
             .tabItem { Label("Mapa", systemImage: "map.fill") }
+            .tag(1)
 
             NavigationStack {
                 YaVividoView()
                     .navigationTitle("Recuerdos")
             }
+            .id(reinicios[2])
             .tabItem { Label("Recuerdos", systemImage: "heart.fill") }
+            .tag(2)
+        }
+        .onChange(of: pestana) { anterior, _ in
+            if reinicios.indices.contains(anterior) {
+                reinicios[anterior] += 1
+            }
         }
         .sheet(isPresented: $mostrandoNueva) {
             NuevaEscapadaView(existente: nil)

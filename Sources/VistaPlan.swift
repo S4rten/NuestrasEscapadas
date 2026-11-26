@@ -14,6 +14,7 @@ struct PlanSecciones: View {
     @State private var nombre = ""
     @State private var url = ""
     @State private var conHora = false
+    @State private var todoElDia = false
     @State private var hora = Date().conHora(11)
     @State private var soloPendientes = false
 
@@ -45,9 +46,12 @@ struct PlanSecciones: View {
 
             TextField("Sitio o plan (ej: Museo del Prado)", text: $nombre)
 
-            Toggle("Hora fija", isOn: $conHora)
-            if conHora {
-                DatePicker("Hora", selection: $hora, displayedComponents: .hourAndMinute)
+            Toggle("Ocupa todo el día", isOn: $todoElDia)
+            if !todoElDia {
+                Toggle("Hora fija", isOn: $conHora)
+                if conHora {
+                    DatePicker("Hora", selection: $hora, displayedComponents: .hourAndMinute)
+                }
             }
 
             TextField("Enlace opcional", text: $url)
@@ -63,6 +67,8 @@ struct PlanSecciones: View {
             .disabled(nombre.recortado.isEmpty)
         } header: {
             Text(escapada.totalDias > 1 ? "Añadir al día \(diaActivo)" : "Añadir un plan")
+        } footer: {
+            Text("«Ocupa todo el día» es para planes como un parque de atracciones o una excursión: se queda fijo arriba del día.")
         }
 
         Section {
@@ -96,8 +102,6 @@ struct PlanSecciones: View {
         }
 
         SeccionGastosDelDia(escapada: escapada, dia: diaActivo, hoja: $hoja)
-
-        SeccionDiarioDia(escapada: escapada, dia: diaActivo)
     }
 
     // MARK: Selector de día
@@ -135,8 +139,9 @@ struct PlanSecciones: View {
     private func fila(_ evento: EventoLinea) -> some View {
         HStack(alignment: .top, spacing: 12) {
             VStack(spacing: 4) {
-                Text(evento.hora.map { $0.formatted(date: .omitted, time: .shortened) } ?? "—")
+                Text(evento.todoElDia ? "Todo\nel día" : (evento.hora.map { $0.formatted(date: .omitted, time: .shortened) } ?? "—"))
                     .font(.caption2.bold().monospacedDigit())
+                    .multilineTextAlignment(.center)
                     .foregroundStyle(evento.completada ? Color.secondary : Color.accentColor)
                 Circle()
                     .fill(evento.completada ? Color.green : Color.accentColor)
@@ -164,9 +169,6 @@ struct PlanSecciones: View {
                         }
                     }
                 }
-                if let actividadId = evento.actividadId {
-                    BotonesVoto(coleccion: .actividades, id: actividadId, votos: evento.votos)
-                }
             }
 
             Spacer(minLength: 0)
@@ -180,6 +182,17 @@ struct PlanSecciones: View {
                         .foregroundStyle(evento.completada ? Color.green : Color.secondary)
                 }
                 .buttonStyle(.borderless)
+            }
+        }
+        .listRowBackground(evento.todoElDia ? Color.accentColor.opacity(0.12) : nil)
+        .swipeActions(edge: .leading) {
+            if let actividadId = evento.actividadId {
+                Button {
+                    almacen.actualizar(actividadId, en: .actividades, campos: ["todoElDia": !evento.todoElDia])
+                } label: {
+                    Label(evento.todoElDia ? "Quitar todo el día" : "Todo el día", systemImage: "sun.max.fill")
+                }
+                .tint(.orange)
             }
         }
         .swipeActions(edge: .trailing) {
@@ -203,11 +216,13 @@ struct PlanSecciones: View {
         actividad.dia = diaActivo
         actividad.nombreSitio = sitio
         actividad.urlSitio = url.recortado
-        actividad.hora = conHora ? escapada.fechaParaDia(diaActivo).combinando(horaDe: hora) : nil
+        actividad.todoElDia = todoElDia
+        actividad.hora = (conHora && !todoElDia) ? escapada.fechaParaDia(diaActivo).combinando(horaDe: hora) : nil
         almacen.guardar(actividad, en: .actividades)
         nombre = ""
         url = ""
         conHora = false
+        todoElDia = false
     }
 
     private func construirEventos() -> [EventoLinea] {

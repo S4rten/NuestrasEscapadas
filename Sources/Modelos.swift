@@ -71,7 +71,7 @@ func urlMapa(consulta: String) -> URL? {
 enum Coleccion: String, CaseIterable {
     case escapadas, vuelos, trenes, alojamientos, gastos, checklist, actividades, ideas
     case retos, fotos
-    case diarios, pagos, fechasEspeciales
+    case pagos, fechasEspeciales
 }
 
 struct Miembro: Identifiable, Hashable {
@@ -430,11 +430,11 @@ struct Actividad: Identifiable, Codable {
     var hora: Date? = nil
     var completada: Bool = false
     var creadaEn: Date = Date()
-    var votos: [String: Int] = [:]          // ID del miembro -> 1 (me gusta) o -1 (no me gusta)
+    var todoElDia: Bool = false             // ocupa el día entero (parque de atracciones, excursión…)
 
     enum CodingKeys: String, CodingKey {
         case id, escapadaId, dia, nombreSitio, urlSitio, hora, completada, creadaEn
-        case votos
+        case todoElDia
     }
 }
 
@@ -449,7 +449,7 @@ extension Actividad {
         hora = try? c.decodeIfPresent(Date.self, forKey: .hora)
         completada = c.valor(.completada, false)
         creadaEn = c.valor(.creadaEn, Date())
-        votos = c.valor(.votos, [String: Int]())
+        todoElDia = c.valor(.todoElDia, false)
     }
 }
 
@@ -482,37 +482,6 @@ extension Idea {
 /// Puntuación de unos votos: suma de 👍 (+1) y 👎 (-1).
 func puntuacion(_ votos: [String: Int]) -> Int {
     votos.values.reduce(0, +)
-}
-
-// ============================================================================
-// DIARIO DE CADA DÍA (id = "{escapadaId}-{dia}", uno por día del viaje)
-// ============================================================================
-
-struct DiarioDia: Identifiable, Codable {
-    var id: String = ""
-    var escapadaId: String = ""
-    var dia: Int = 1
-    var nota: String = ""
-    var emoji: String = ""
-
-    enum CodingKeys: String, CodingKey {
-        case id, escapadaId, dia, nota, emoji
-    }
-
-    static func idPara(escapadaId: String, dia: Int) -> String {
-        "\(escapadaId)-\(dia)"
-    }
-}
-
-extension DiarioDia {
-    init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        id = c.valor(.id, "")
-        escapadaId = c.valor(.escapadaId, "")
-        dia = c.valor(.dia, 1)
-        nota = c.valor(.nota, "")
-        emoji = c.valor(.emoji, "")
-    }
 }
 
 // ============================================================================
@@ -664,8 +633,8 @@ struct EventoLinea: Identifiable {
     let actividadId: String?     // si no es nil, es una actividad editable
     let completada: Bool
     let enlace: URL?
-    var votos: [String: Int] = [:]
     var ruta: URL? = nil         // "Cómo llegar" en Apple Maps
+    var todoElDia: Bool = false  // plan que ocupa el día entero
 }
 
 struct ResumenGastos {

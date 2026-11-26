@@ -36,7 +36,6 @@ final class Almacen: ObservableObject {
     @Published private(set) var actividades: [Actividad] = []
     @Published private(set) var ideas: [Idea] = []
     @Published private(set) var retos: [Reto] = []
-    @Published private(set) var diarios: [DiarioDia] = []
     @Published private(set) var pagos: [PagoPareja] = []
     @Published private(set) var fechasEspeciales: [FechaEspecial] = []
     /// true mientras haya cambios guardados en este iPhone que aún no han llegado a la nube.
@@ -94,7 +93,6 @@ final class Almacen: ObservableObject {
         escuchar(.actividades, en: base, destino: \Almacen.actividades)
         escuchar(.ideas, en: base, destino: \Almacen.ideas)
         escuchar(.retos, en: base, destino: \Almacen.retos)
-        escuchar(.diarios, en: base, destino: \Almacen.diarios)
         escuchar(.pagos, en: base, destino: \Almacen.pagos)
         escuchar(.fechasEspeciales, en: base, destino: \Almacen.fechasEspeciales)
         escucharMiembros(en: base)
@@ -113,7 +111,6 @@ final class Almacen: ObservableObject {
         actividades = []
         ideas = []
         retos = []
-        diarios = []
         pagos = []
         fechasEspeciales = []
         pendientesPorColeccion = [:]
@@ -261,15 +258,6 @@ final class Almacen: ObservableObject {
         retos.first(where: { $0.id == id })
     }
 
-    func diario(de escapadaId: String, dia: Int) -> DiarioDia? {
-        let id = DiarioDia.idPara(escapadaId: escapadaId, dia: dia)
-        return diarios.first(where: { $0.id == id })
-    }
-
-    func diariosDe(_ id: String) -> [DiarioDia] {
-        diarios.filter { $0.escapadaId == id }.sorted { $0.dia < $1.dia }
-    }
-
     func pagosDe(_ id: String) -> [PagoPareja] {
         pagos.filter { $0.escapadaId == id }.sorted { $0.fecha > $1.fecha }
     }
@@ -373,7 +361,6 @@ final class Almacen: ObservableObject {
             lote.deleteDocument(referencia(.retos, r.id))
             lote.deleteDocument(referencia(.fotos, r.id))
         }
-        for d in diarios where d.escapadaId == escapada.id { lote.deleteDocument(referencia(.diarios, d.id)) }
         for p in pagos where p.escapadaId == escapada.id { lote.deleteDocument(referencia(.pagos, p.id)) }
         lote.deleteDocument(referencia(.escapadas, escapada.id))
         lote.commit { [weak self] error in

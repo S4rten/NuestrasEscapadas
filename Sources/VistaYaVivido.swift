@@ -72,8 +72,6 @@ struct YaVividoView: View {
                     description: Text("Cuando termine una escapada, la podréis puntuar y guardar aquí.")
                 )
             } else {
-                resumen
-
                 Section {
                     NavigationLink {
                         EstadisticasView()
@@ -138,30 +136,6 @@ struct YaVividoView: View {
         .listStyle(.insetGrouped)
         .navigationDestination(for: String.self) { id in
             DetalleEscapadaView(escapadaId: id)
-        }
-    }
-
-    private var resumen: some View {
-        let gastoTotal = vividas.reduce(0) { $0 + almacen.totalGastado($1.id) }
-        return Section {
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("\(vividas.count)")
-                        .font(.title.bold().monospacedDigit())
-                    Text(vividas.count == 1 ? "escapada vivida" : "escapadas vividas")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                VStack(alignment: .trailing, spacing: 2) {
-                    Text(gastoTotal.formatoDivisa())
-                        .font(.title3.bold().monospacedDigit())
-                    Text("gastado en total")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .padding(.vertical, 4)
         }
     }
 

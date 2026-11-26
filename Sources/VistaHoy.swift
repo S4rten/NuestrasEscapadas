@@ -5,7 +5,7 @@ import SwiftUI
 //  · Almacen.eventos(de:dia:)  -> línea del tiempo de un día (Plan, Hoy e Inicio)
 //  · SeccionAhora              -> lo siguiente que toca hoy (pestaña Plan)
 //  · TarjetaHoy                -> resumen del día en curso (pantalla Próximas)
-//  · BotonesVoto               -> 👍 / 👎 de cada uno en planes e ideas
+//  · BotonesVoto               -> 👍 / 👎 de cada uno en las ideas
 // ============================================================================
 
 /// Abre Apple Maps con la ruta desde donde estés hasta `destino`.
@@ -92,19 +92,21 @@ extension Almacen {
         for actividad in actividadesDe(escapada.id) where actividad.dia == dia {
             lista.append(EventoLinea(
                 id: "actividad-\(actividad.id)",
-                hora: actividad.hora,
+                hora: actividad.todoElDia ? nil : actividad.hora,
                 titulo: actividad.nombreSitio,
-                subtitulo: actividad.hora == nil ? "Sin hora fija" : "Plan del día",
-                icono: "📍",
+                subtitulo: actividad.todoElDia ? "Ocupa todo el día" : (actividad.hora == nil ? "Sin hora fija" : "Plan del día"),
+                icono: actividad.todoElDia ? "🌞" : "📍",
                 actividadId: actividad.id,
                 completada: actividad.completada,
                 enlace: urlDesdeTexto(actividad.urlSitio),
-                votos: actividad.votos,
-                ruta: urlRuta(destino: "\(actividad.nombreSitio), \(escapada.destino)")
+                ruta: urlRuta(destino: "\(actividad.nombreSitio), \(escapada.destino)"),
+                todoElDia: actividad.todoElDia
             ))
         }
 
+        // Los planes de todo el día van siempre arriba; el resto, por hora.
         return lista.sorted { a, b in
+            if a.todoElDia != b.todoElDia { return a.todoElDia }
             switch (a.hora, b.hora) {
             case let (x?, y?):
                 return x < y
@@ -174,7 +176,7 @@ struct FilaEventoCompacta: View {
                     .foregroundStyle(destacado ? Color.accentColor : Color.secondary)
                 Text(evento.titulo)
                     .font(destacado ? .subheadline.bold() : .subheadline)
-                Text(evento.hora.map { $0.formatted(date: .omitted, time: .shortened) } ?? "Sin hora fija")
+                Text(evento.todoElDia ? "Todo el día" : (evento.hora.map { $0.formatted(date: .omitted, time: .shortened) } ?? "Sin hora fija"))
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
@@ -223,7 +225,7 @@ struct TarjetaHoy: View {
                 VStack(alignment: .leading, spacing: 6) {
                     ForEach(pendientes) { e in
                         HStack(spacing: 8) {
-                            Text(e.hora.map { $0.formatted(date: .omitted, time: .shortened) } ?? "—")
+                            Text(e.todoElDia ? "Día" : (e.hora.map { $0.formatted(date: .omitted, time: .shortened) } ?? "—"))
                                 .font(.caption.bold().monospacedDigit())
                                 .foregroundStyle(Color.accentColor)
                                 .frame(width: 48, alignment: .leading)

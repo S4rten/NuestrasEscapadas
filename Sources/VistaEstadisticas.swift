@@ -1,5 +1,4 @@
 import SwiftUI
-import MapKit
 import CoreLocation
 
 // ============================================================================
@@ -22,12 +21,6 @@ enum Paises {
     static func nombre(_ iso: String) -> String {
         Locale.current.localizedString(forRegionCode: iso) ?? iso
     }
-}
-
-private struct PuntoMapa: Identifiable {
-    let id: String
-    let nombre: String
-    let coordenada: CLLocationCoordinate2D
 }
 
 private struct PaisVisitado: Identifiable {
@@ -162,10 +155,6 @@ struct EstadisticasView: View {
             .sorted { $0.viajes != $1.viajes ? $0.viajes > $1.viajes : Paises.nombre($0.id) < Paises.nombre($1.id) }
         let ciudades = Set(visitadas.map { $0.destino.recortado.lowercased() }).count
         let sinPais = visitadas.filter { $0.paisCodigo.isEmpty }.count
-        let puntos = visitadas.compactMap { e -> PuntoMapa? in
-            guard let lat = e.latitud, let lon = e.longitud else { return nil }
-            return PuntoMapa(id: e.id, nombre: e.destino, coordenada: CLLocationCoordinate2D(latitude: lat, longitude: lon))
-        }
 
         Section {
             HStack {
@@ -179,18 +168,6 @@ struct EstadisticasView: View {
 
             ProgressView(value: Double(paises.count), total: Double(Paises.totalMundo))
                 .tint(.green)
-
-            if !puntos.isEmpty {
-                Map(initialPosition: .automatic) {
-                    ForEach(puntos) { p in
-                        Marker(p.nombre, coordinate: p.coordenada)
-                            .tint(.pink)
-                    }
-                }
-                .frame(height: 220)
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .listRowInsets(EdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 8))
-            }
 
             ForEach(paises) { p in
                 HStack(spacing: 12) {
