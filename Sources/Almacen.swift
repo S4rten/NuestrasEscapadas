@@ -50,6 +50,9 @@ final class Almacen: ObservableObject {
     @Published private(set) var billetesDescargados: [String: Data] = [:]
     /// true si el espacio no admite iPhones nuevos (se cambia en Ajustes).
     @Published private(set) var espacioCerrado = false
+    /// Clave gratuita de AeroDataBox (RapidAPI) para traer horarios de vuelos.
+    /// Va en el documento del espacio, así la usan los dos iPhones.
+    @Published private(set) var claveVuelos = ""
     /// UID anónimo de Firebase de este iPhone.
     @Published private(set) var miUid = ""
     /// true mientras haya cambios guardados en este iPhone que aún no han llegado a la nube.
@@ -148,6 +151,19 @@ final class Almacen: ObservableObject {
             }
     }
 
+    /// Guarda (o quita, si va vacía) la clave de horarios de vuelos para los dos iPhones.
+    func guardarClaveVuelos(_ clave: String) {
+        guard !codigo.isEmpty else { return }
+        let limpia = clave.recortado
+        claveVuelos = limpia
+        Firestore.firestore().collection("parejas").document(codigo)
+            .setData(["claveVuelos": limpia], merge: true) { [weak self] error in
+                if let error = error {
+                    Task { @MainActor in self?.registrarFallo(error, "guardar la clave de horarios") }
+                }
+            }
+    }
+
     /// Quita el permiso a un iPhone (por ejemplo, uno antiguo o perdido).
     func revocarAcceso(_ acceso: Acceso) {
         guard acceso.id != miUid else { return }
@@ -225,6 +241,7 @@ final class Almacen: ObservableObject {
         billetesDescargados = [:]
         billetesEnDescarga = []
         espacioCerrado = false
+        claveVuelos = ""
         novedadesLimpiadas = false
         pendientesPorColeccion = [:]
         cambiosPendientes = false
@@ -275,8 +292,10 @@ final class Almacen: ObservableObject {
     private func escucharEspacio(_ base: DocumentReference) {
         let registro = base.addSnapshotListener { [weak self] snapshot, _ in
             let cerrado = (snapshot?.data()?["cerrado"] as? Bool) ?? false
+            let clave = (snapshot?.data()?["claveVuelos"] as? String) ?? ""
             Task { @MainActor in
                 self?.espacioCerrado = cerrado
+                self?.claveVuelos = clave
             }
         }
         listeners.append(registro)
@@ -331,7 +350,8 @@ final class Almacen: ObservableObject {
     // MARK: Personas
 
     func nombre(de id: String, miId: String) -> String {
-        if id == miId { return "Tú" }
+        // También para uno mismo: el nombre que sale en Miembros (en vez de "Tú").
+        if id == miId { return miembros.first(where: { $0.id == id })?.nombre ?? "Tú" }
         return miembros.first(where: { $0.id == id })?.nombre ?? "Tu pareja"
     }
 

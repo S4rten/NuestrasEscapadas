@@ -16,11 +16,11 @@ struct RetosSecciones: View {
     @Binding var hoja: HojaDetalle?
 
     @State private var textoReto = ""
+    @State private var mostrandoSugerencias = false
 
     var body: some View {
         let retos = almacen.retosDe(escapada.id)
         let hechos = retos.filter { $0.completado }.count
-        let sugerenciasLibres = RetosSugeridos.lista.filter { s in !retos.contains(where: { $0.texto == s }) }
 
         SeccionRetoDelDia(escapada: escapada)
 
@@ -51,20 +51,14 @@ struct RetosSecciones: View {
                 .disabled(textoReto.recortado.isEmpty)
             }
 
-            if !sugerenciasLibres.isEmpty {
-                Menu {
-                    Button {
-                        for s in sugerenciasLibres { anadir(s) }
-                    } label: {
-                        Label("Añadir todas (\(sugerenciasLibres.count))", systemImage: "sparkles")
-                    }
-                    Divider()
-                    ForEach(sugerenciasLibres, id: \.self) { s in
-                        Button(s) { anadir(s) }
-                    }
-                } label: {
-                    Label("Retos sugeridos", systemImage: "lightbulb.fill")
-                }
+            // Cada vez que se abre salen 10 retos distintos (inventados y de sitios cercanos).
+            Button {
+                mostrandoSugerencias = true
+            } label: {
+                Label("Retos sugeridos (10 nuevos cada vez)", systemImage: "lightbulb.fill")
+            }
+            .sheet(isPresented: $mostrandoSugerencias) {
+                SugerenciasRetosView(escapada: escapada)
             }
 
             ForEach(retos) { reto in
@@ -136,7 +130,7 @@ struct FilaReto: View {
                 Text(reto.texto)
                     .font(.subheadline.weight(.medium))
                 Text(reto.completado
-                     ? "✅ Conseguido por \(reto.completadoPorId == sesion.miId ? "ti" : almacen.nombre(de: reto.completadoPorId, miId: sesion.miId))"
+                     ? "✅ Conseguido por \(reto.completadoPorId == sesion.miId ? sesion.miNombre : almacen.nombre(de: reto.completadoPorId, miId: sesion.miId))"
                      : "Pendiente")
                     .font(.caption2)
                     .foregroundStyle(reto.completado ? Color.green : Color.secondary)
@@ -260,7 +254,7 @@ struct VisorFotoReto: View {
 
     private func textoAutor(_ reto: Reto) -> String {
         let quien = reto.completadoPorId == sesion.miId
-            ? "ti"
+            ? sesion.miNombre
             : almacen.nombre(de: reto.completadoPorId, miId: sesion.miId)
         var texto = "Conseguido por \(quien)"
         if let fecha = reto.fotoEn {

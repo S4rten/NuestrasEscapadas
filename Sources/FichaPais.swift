@@ -91,12 +91,18 @@ enum FichasPaises {
 struct SeccionFichaPais: View {
     let escapada: Escapada
     @State private var abierta = false
+    @ObservedObject private var exteriores = ServicioExteriores.compartido
+    @State private var vistoActualizacion = ""
+
+    /// Última actualización de Exteriores que ya se ha visto en esta escapada.
+    private var claveVisto: String { "escapadas_exteriores_visto_\(escapada.id)" }
 
     var body: some View {
         let iso = escapada.paisCodigo.uppercased()
         if !iso.isEmpty, iso != "ES" {
             Section {
                 DisclosureGroup(isExpanded: $abierta) {
+                    BloqueExteriores(iso: iso, escapada: escapada)
                     if let info = FichasPaises.datos[iso] {
                         contenido(info)
                     } else {
@@ -117,6 +123,18 @@ struct SeccionFichaPais: View {
                                     .foregroundStyle(.secondary)
                                     .lineLimit(1)
                             }
+                            if let f = exteriores.fichas[iso] {
+                                if Exteriores.cambioTrasPlanear(f, escapada: escapada) && f.actualizacion != vistoActualizacion {
+                                    Text("🆕 Exteriores ha cambiado sus recomendaciones")
+                                        .font(.caption.bold())
+                                        .foregroundStyle(.orange)
+                                }
+                                if !f.avisos.isEmpty {
+                                    Text("⚠️ Hay zonas a las que desaconseja viajar")
+                                        .font(.caption.bold())
+                                        .foregroundStyle(.red)
+                                }
+                            }
                         }
                     }
                 }
@@ -125,7 +143,28 @@ struct SeccionFichaPais: View {
                     Text("Para viajeros con nacionalidad española. Los requisitos cambian: comprobadlos antes en exteriores.gob.es › Recomendaciones de viaje.")
                 }
             }
+            .task(id: iso) {
+                // Solo para viajes que aún no se han hecho; si lo guardado es reciente, no se vuelve a pedir.
+                if !escapada.yaVivida {
+                    await exteriores.actualizarSiHaceFalta(iso)
+                }
+            }
+            .onAppear {
+                vistoActualizacion = UserDefaults.standard.string(forKey: claveVisto) ?? ""
+            }
+            .onChange(of: abierta) { _, ahora in
+                if ahora { marcarVisto(iso) }
+            }
+            .onChange(of: exteriores.fichas[iso]?.actualizacion) { _, _ in
+                if abierta { marcarVisto(iso) }
+            }
         }
+    }
+
+    private func marcarVisto(_ iso: String) {
+        guard let f = exteriores.fichas[iso] else { return }
+        UserDefaults.standard.set(f.actualizacion, forKey: claveVisto)
+        vistoActualizacion = f.actualizacion
     }
 
     private func resumen(_ info: InfoPais) -> String {

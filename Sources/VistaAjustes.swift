@@ -129,6 +129,8 @@ struct AjustesView: View {
 
                 SeccionCopiaSeguridad()
 
+                SeccionClaveVuelos()
+
                 Section {
                     Button {
                         Task { await divisas.actualizar() }

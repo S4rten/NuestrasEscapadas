@@ -148,6 +148,6 @@ struct SeccionPagosPareja: View {
     }
 
     private func nombre(_ id: String) -> String {
-        id == sesion.miId ? "Tú" : almacen.nombre(de: id, miId: sesion.miId)
+        id == sesion.miId ? sesion.miNombre : almacen.nombre(de: id, miId: sesion.miId)
     }
 }

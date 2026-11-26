@@ -145,7 +145,7 @@ struct SeccionGastosDelDia: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(gasto.concepto)
                             .font(.subheadline)
-                        Text("Pagó \(gasto.pagadoPorId == sesion.miId ? "yo" : almacen.nombre(de: gasto.pagadoPorId, miId: sesion.miId))")
+                        Text("Pagó \(gasto.pagadoPorId == sesion.miId ? sesion.miNombre : almacen.nombre(de: gasto.pagadoPorId, miId: sesion.miId))")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }

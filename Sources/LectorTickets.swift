@@ -171,57 +171,81 @@ struct SeccionEscanearTicket: View {
     let alLeer: (TicketLeido) -> Void
 
     @State private var camara = false
+    @State private var galeria = false
     @State private var foto: PhotosPickerItem? = nil
     @State private var leyendo = false
     @State private var mensaje = ""
 
     var body: some View {
+        // Cada botón en su propia fila: con los dos en la misma fila, al tocar
+        // "galería" la lista podía disparar el otro botón y no abrirse nunca.
         Section {
-            HStack(spacing: 10) {
-                Button {
-                    camara = true
-                } label: {
-                    Label("Escanear ticket", systemImage: "doc.text.viewfinder")
-                        .font(.subheadline.bold())
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(leyendo || !UIImagePickerController.isSourceTypeAvailable(.camera))
+            Button {
+                camara = true
+            } label: {
+                Label("Escanear ticket con la cámara", systemImage: "doc.text.viewfinder")
+            }
+            .disabled(leyendo || !UIImagePickerController.isSourceTypeAvailable(.camera))
+            .fullScreenCover(isPresented: $camara) {
+                SelectorCamara(
+                    alHacerFoto: { imagen in
+                        camara = false
+                        procesar(imagen)
+                    },
+                    alCancelar: { camara = false },
+                    frontal: false
+                )
+                .ignoresSafeArea()
+            }
 
-                PhotosPicker(selection: $foto, matching: .images) {
-                    Label("De fotos", systemImage: "photo")
+            Button {
+                galeria = true
+            } label: {
+                Label("Elegir la foto del ticket de la galería", systemImage: "photo.on.rectangle")
+            }
+            .disabled(leyendo)
+            .photosPicker(isPresented: $galeria, selection: $foto, matching: .images)
+            .onChange(of: foto) { _, item in
+                guard let item = item else { return }
+                leyendo = true
+                mensaje = "Abriendo la foto…"
+                Task {
+                    let imagen = await cargarImagen(item)
+                    foto = nil
+                    if let imagen = imagen {
+                        procesar(imagen)
+                    } else {
+                        leyendo = false
+                        mensaje = "No se pudo abrir esa foto. Si está en iCloud, espera a que se descargue y prueba otra vez."
+                    }
+                }
+            }
+
+            if leyendo {
+                HStack(spacing: 8) {
+                    ProgressView()
+                    Text("Un momento…")
                         .font(.subheadline)
+                        .foregroundStyle(.secondary)
                 }
-                .buttonStyle(.bordered)
-                .disabled(leyendo)
-
-                Spacer(minLength: 0)
-                if leyendo { ProgressView() }
             }
         } footer: {
-            Text(mensaje.isEmpty ? "Haz una foto al ticket y se rellenan solos el importe, el comercio y la fecha. La foto no se guarda." : mensaje)
+            Text(mensaje.isEmpty ? "Haz una foto al ticket (o elige una de la galería) y se rellenan solos el importe, el comercio y la fecha. La foto no se guarda." : mensaje)
         }
-        .fullScreenCover(isPresented: $camara) {
-            SelectorCamara(
-                alHacerFoto: { imagen in
-                    camara = false
-                    procesar(imagen)
-                },
-                alCancelar: { camara = false },
-                frontal: false
-            )
-            .ignoresSafeArea()
-        }
-        .onChange(of: foto) { _, item in
-            guard let item = item else { return }
-            Task {
-                if let datos = try? await item.loadTransferable(type: Data.self),
-                   let imagen = UIImage(data: datos) {
-                    procesar(imagen)
-                } else {
-                    mensaje = "No se pudo abrir esa foto."
-                }
-                foto = nil
-            }
+    }
+
+    /// Carga la foto elegida y la reduce si es enorme (así se lee más rápido y sin agotar memoria).
+    private func cargarImagen(_ item: PhotosPickerItem) async -> UIImage? {
+        guard let datos = try? await item.loadTransferable(type: Data.self),
+              let imagen = UIImage(data: datos) else { return nil }
+        let lado = max(imagen.size.width, imagen.size.height)
+        guard lado > 3000 else { return imagen }
+        let escala = 3000 / lado
+        let nuevo = CGSize(width: floor(imagen.size.width * escala), height: floor(imagen.size.height * escala))
+        let formato = UIGraphicsImageRendererFormat.default()
+        formato.scale = 1
+        return UIGraphicsImageRenderer(size: nuevo, format: formato).image { _ in
+            imagen.draw(in: CGRect(origin: .zero, size: nuevo))
         }
     }
 

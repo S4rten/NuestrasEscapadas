@@ -67,7 +67,10 @@ struct ReservasSecciones: View {
             ForEach(almacen.alojamientosDe(escapada.id)) { alojamiento in
                 VStack(alignment: .leading, spacing: 8) {
                     TarjetaAlojamiento(alojamiento: alojamiento, destino: escapada.destino)
-                    BotonBilletes(reservaId: alojamiento.id, titulo: alojamiento.nombre.isEmpty ? "Alojamiento" : alojamiento.nombre, hoja: $hoja)
+                    // En el alojamiento ya no se añaden billetes; solo se ven los que ya estaban guardados.
+                    if !almacen.billetesDe(reserva: alojamiento.id).isEmpty {
+                        BotonBilletes(reservaId: alojamiento.id, titulo: alojamiento.nombre.isEmpty ? "Alojamiento" : alojamiento.nombre, hoja: $hoja)
+                    }
                 }
                     .contentShape(Rectangle())
                     .onTapGesture { hoja = .alojamiento(alojamiento) }
@@ -87,7 +90,7 @@ struct ReservasSecciones: View {
         } header: {
             Text("Alojamiento")
         } footer: {
-            Text("Toca una reserva para editarla y desliza para borrarla. En «Billetes» podéis guardar la tarjeta de embarque, el QR o la confirmación como foto.")
+            Text("Toca una reserva para editarla y desliza para borrarla. En los vuelos y trenes, «Billetes» guarda la tarjeta de embarque o el QR como foto.")
         }
     }
 }
@@ -116,17 +119,36 @@ struct TarjetaVuelo: View {
                 VStack(alignment: .leading) {
                     Text(vuelo.origen)
                         .font(.title2.bold())
+                    if !vuelo.ciudadOrigen.isEmpty {
+                        Text(vuelo.ciudadOrigen)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
                     Text(vuelo.fechaHoraSalida.formatted(date: .omitted, time: .shortened))
                         .font(.caption.bold())
                         .foregroundStyle(Color.accentColor)
                 }
                 Spacer()
-                Image(systemName: "airplane")
-                    .foregroundStyle(Color.accentColor)
+                VStack(spacing: 2) {
+                    Image(systemName: "airplane")
+                        .foregroundStyle(Color.accentColor)
+                    if vuelo.duracionMinutos > 0 {
+                        Text(textoDuracion(vuelo.duracionMinutos))
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
                 Spacer()
                 VStack(alignment: .trailing) {
                     Text(vuelo.destino)
                         .font(.title2.bold())
+                    if !vuelo.ciudadDestino.isEmpty {
+                        Text(vuelo.ciudadDestino)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
                     Text(vuelo.fechaHoraLlegada.formatted(date: .omitted, time: .shortened))
                         .font(.caption.bold())
                 }

@@ -31,7 +31,7 @@ struct GastosSecciones: View {
                     }
                     Spacer()
                     VStack(alignment: .trailing, spacing: 2) {
-                        Text("Yo: \(resumen.pagadoPorMi.formatoDivisa())")
+                        Text("\(sesion.miNombre): \(resumen.pagadoPorMi.formatoDivisa())")
                         Text("\(pareja): \(resumen.pagadoPorPareja.formatoDivisa())")
                     }
                     .font(.caption.weight(.medium))
@@ -98,6 +98,19 @@ struct GastosSecciones: View {
         }
     }
 
+    /// "Todo de Ana", "Todo de Eric" o "Reparto 70 / 30" (nil si es a medias).
+    private func textoRepartoConNombres(_ gasto: Gasto) -> String? {
+        let pagueYo = gasto.pagadoPorId == sesion.miId
+        let pagador = pagueYo ? sesion.miNombre : almacen.nombre(de: gasto.pagadoPorId, miId: sesion.miId)
+        let otro = pagueYo ? almacen.nombreDePareja(miId: sesion.miId) : sesion.miNombre
+        switch ModoReparto.para(gasto.porcentajePagador) {
+        case .aMedias: return nil
+        case .todoQuienPaga: return "Todo de \(pagador)"
+        case .todoElOtro: return "Todo de \(otro)"
+        case .personalizado: return textoRepartoCorto(gasto.porcentajePagador)
+        }
+    }
+
     private func filaGasto(_ gasto: Gasto) -> some View {
         HStack(spacing: 10) {
             Text(CategoriaGasto.icono(para: gasto.categoria))
@@ -105,10 +118,10 @@ struct GastosSecciones: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(gasto.concepto)
                     .font(.subheadline.weight(.medium))
-                Text("\(gasto.categoria) · Pagó \(gasto.pagadoPorId == sesion.miId ? "yo" : almacen.nombre(de: gasto.pagadoPorId, miId: sesion.miId)) · \(gasto.fecha.formatted(date: .abbreviated, time: .omitted))")
+                Text("\(gasto.categoria) · Pagó \(gasto.pagadoPorId == sesion.miId ? sesion.miNombre : almacen.nombre(de: gasto.pagadoPorId, miId: sesion.miId)) · \(gasto.fecha.formatted(date: .abbreviated, time: .omitted))")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
-                if let reparto = textoRepartoCorto(gasto.porcentajePagador) {
+                if let reparto = textoRepartoConNombres(gasto) {
                     Text("⚖️ \(reparto)")
                         .font(.caption2.bold())
                         .foregroundStyle(Color.accentColor)
@@ -204,7 +217,7 @@ struct FormularioGasto: View {
     }
 
     private var pagadores: [Miembro] {
-        var lista: [Miembro] = [Miembro(id: sesion.miId, nombre: "Yo")]
+        var lista: [Miembro] = [Miembro(id: sesion.miId, nombre: sesion.miNombre)]
         for m in almacen.miembros where m.id != sesion.miId {
             lista.append(m)
         }
@@ -277,10 +290,11 @@ struct FormularioGasto: View {
                     }
                     .pickerStyle(.segmented)
 
-                    Picker("Reparto", selection: $modoReparto) {
-                        ForEach(ModoReparto.allCases) { m in
-                            Text(m.etiqueta).tag(m)
-                        }
+                    Picker("Reparto", selection: repartoPorPersona) {
+                        Text("A medias").tag("aMedias")
+                        Text(sesion.miNombre).tag(sesion.miId)
+                        Text(otraPersona.nombre).tag(otraPersona.id)
+                        Text(ModoReparto.personalizado.etiqueta).tag("personalizado")
                     }
 
                     if modoReparto == .personalizado {
@@ -310,6 +324,15 @@ struct FormularioGasto: View {
             .onChange(of: modoReparto) { _, nuevo in
                 if let p = nuevo.porcentaje { porcentajePagador = p }
             }
+            .onChange(of: pagadoPorId) { anterior, nuevo in
+                // "Todo de Ana" sigue siendo de Ana aunque cambie quién pagó.
+                guard !anterior.isEmpty, anterior != nuevo else { return }
+                if modoReparto == .todoQuienPaga {
+                    modoReparto = .todoElOtro
+                } else if modoReparto == .todoElOtro {
+                    modoReparto = .todoQuienPaga
+                }
+            }
             .navigationTitle(existente == nil ? "Nuevo gasto" : "Editar gasto")
             .navigationBarTitleDisplayMode(.inline)
             .onAppear {
@@ -331,6 +354,46 @@ struct FormularioGasto: View {
                 }
             }
         }
+    }
+
+    /// La otra persona del espacio (o quien pagó, si no he sido yo).
+    private var otraPersona: Miembro {
+        let pagador = pagadoPorId.isEmpty ? sesion.miId : pagadoPorId
+        if pagador != sesion.miId {
+            return pagadores.first(where: { $0.id == pagador })
+                ?? Miembro(id: pagador, nombre: almacen.nombreDePareja(miId: sesion.miId))
+        }
+        return almacen.miembros.first(where: { $0.id != sesion.miId })
+            ?? Miembro(id: "pareja", nombre: almacen.nombreDePareja(miId: sesion.miId))
+    }
+
+    /// Reparto por persona: "aMedias", el ID de quien carga con todo el gasto, o "personalizado".
+    /// Por dentro se sigue guardando como parte de quien paga (porcentajePagador).
+    private var repartoPorPersona: Binding<String> {
+        Binding(
+            get: {
+                let pagador = pagadoPorId.isEmpty ? sesion.miId : pagadoPorId
+                let otro = otraPersona.id
+                switch modoReparto {
+                case .aMedias: return "aMedias"
+                case .personalizado: return "personalizado"
+                case .todoQuienPaga: return pagador == sesion.miId ? sesion.miId : otro
+                case .todoElOtro: return pagador == sesion.miId ? otro : sesion.miId
+                }
+            },
+            set: { valor in
+                let pagueYo = (pagadoPorId.isEmpty ? sesion.miId : pagadoPorId) == sesion.miId
+                if valor == "aMedias" {
+                    modoReparto = .aMedias
+                } else if valor == "personalizado" {
+                    modoReparto = .personalizado
+                } else if valor == sesion.miId {
+                    modoReparto = pagueYo ? .todoQuienPaga : .todoElOtro
+                } else {
+                    modoReparto = pagueYo ? .todoElOtro : .todoQuienPaga
+                }
+            }
+        )
     }
 
     /// "A ti te tocan X € y a Ana Y €" según quién paga y el reparto elegido.

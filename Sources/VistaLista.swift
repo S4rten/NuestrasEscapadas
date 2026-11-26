@@ -23,7 +23,7 @@ struct ListaSecciones: View {
     private var opciones: [OpcionAsignacion] {
         var lista = [
             OpcionAsignacion(id: "", etiqueta: "Ambos"),
-            OpcionAsignacion(id: sesion.miId, etiqueta: "Yo")
+            OpcionAsignacion(id: sesion.miId, etiqueta: sesion.miNombre)
         ]
         for miembro in almacen.miembros where miembro.id != sesion.miId {
             lista.append(OpcionAsignacion(id: miembro.id, etiqueta: miembro.nombre))
@@ -33,7 +33,7 @@ struct ListaSecciones: View {
 
     private func etiquetaAsignacion(_ id: String) -> String {
         if id.isEmpty { return "Ambos" }
-        if id == sesion.miId { return "Yo" }
+        if id == sesion.miId { return sesion.miNombre }
         return almacen.miembros.first(where: { $0.id == id })?.nombre ?? "Pareja"
     }
 

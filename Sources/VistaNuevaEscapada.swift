@@ -74,6 +74,35 @@ struct NuevaEscapadaView: View {
     @State private var guardando = false
     @State private var cargado = false
     @StateObject private var buscador = BuscadorDestinos()
+    /// Escapada nueva: tras elegir la ida, la vuelta queda en ese mismo día y hay que elegirla.
+    @State private var vueltaPorElegir = false
+    @State private var confirmandoMismoDia = false
+
+    /// Al cambiar la ida de una escapada nueva, la vuelta se coloca en ese día (no puede ser antes).
+    private var fechaIda: Binding<Date> {
+        Binding(
+            get: { inicio },
+            set: { nueva in
+                inicio = nueva
+                if existente == nil {
+                    fin = nueva
+                    vueltaPorElegir = true
+                } else if fin < nueva {
+                    fin = nueva
+                }
+            }
+        )
+    }
+
+    private var fechaVuelta: Binding<Date> {
+        Binding(
+            get: { fin },
+            set: { nueva in
+                fin = max(nueva, inicio)
+                vueltaPorElegir = false
+            }
+        )
+    }
 
     private let iconos = ["✈️", "🏔️", "🏖️", "🌿", "🍷", "🚗", "🎁", "🏙️", "🚆", "⛺️", "🎡", "🍕"]
 
@@ -169,9 +198,16 @@ struct NuevaEscapadaView: View {
                     Text("Elige una sugerencia para que aparezca bien en el mapa y se proponga la moneda del país.")
                 }
 
-                Section("Fechas") {
-                    DatePicker("Ida", selection: $inicio, displayedComponents: .date)
-                    DatePicker("Vuelta", selection: $fin, in: inicio..., displayedComponents: .date)
+                Section {
+                    DatePicker("Ida", selection: fechaIda, displayedComponents: .date)
+                    DatePicker("Vuelta", selection: fechaVuelta, in: inicio..., displayedComponents: .date)
+                } header: {
+                    Text("Fechas")
+                } footer: {
+                    if vueltaPorElegir {
+                        Text("Ahora elige la vuelta: a partir del \(inicio.formatted(date: .long, time: .omitted)) (los días anteriores están bloqueados).")
+                            .foregroundStyle(.orange)
+                    }
                 }
 
                 Section {
@@ -238,9 +274,21 @@ struct NuevaEscapadaView: View {
                     Button("Cancelar") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Guardar") { guardar() }
-                        .disabled(!puedeGuardar)
+                    Button("Guardar") {
+                        if vueltaPorElegir {
+                            confirmandoMismoDia = true
+                        } else {
+                            guardar()
+                        }
+                    }
+                    .disabled(!puedeGuardar)
                 }
+            }
+            .confirmationDialog("¿Volvéis el mismo día?", isPresented: $confirmandoMismoDia, titleVisibility: .visible) {
+                Button("Sí, ida y vuelta el mismo día") { guardar() }
+                Button("Elegir la fecha de vuelta", role: .cancel) {}
+            } message: {
+                Text("Aún no has elegido la fecha de vuelta.")
             }
         }
     }
@@ -252,6 +300,10 @@ struct NuevaEscapadaView: View {
             if let f = fechaSugerida {
                 inicio = f
                 fin = f.sumando(dias: 2)
+            } else {
+                // Nueva: la vuelta empieza en el día de la ida y hay que elegirla.
+                fin = inicio
+                vueltaPorElegir = true
             }
             if let t = tituloSugerido { titulo = t }
             if let d = destinoSugerido, !d.recortado.isEmpty { destino = d }

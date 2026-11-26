@@ -246,10 +246,14 @@ struct Vuelo: Identifiable, Codable {
     var localizador: String = ""
     var terminalPuerta: String = ""
     var urlReserva: String = ""
+    var ciudadOrigen: String = ""           // se rellena al buscar el vuelo (ej: "Madrid")
+    var ciudadDestino: String = ""
+    var duracionMinutos: Int = 0            // duración real del vuelo (0 = sin saber)
 
     enum CodingKeys: String, CodingKey {
         case id, escapadaId, trayecto, origen, destino, fechaHoraSalida, fechaHoraLlegada
         case aerolinea, numeroVuelo, localizador, terminalPuerta, urlReserva
+        case ciudadOrigen, ciudadDestino, duracionMinutos
     }
 }
 
@@ -268,6 +272,9 @@ extension Vuelo {
         localizador = c.valor(.localizador, "")
         terminalPuerta = c.valor(.terminalPuerta, "")
         urlReserva = c.valor(.urlReserva, "")
+        ciudadOrigen = c.valor(.ciudadOrigen, "")
+        ciudadDestino = c.valor(.ciudadDestino, "")
+        duracionMinutos = c.valor(.duracionMinutos, 0)
     }
 }
 

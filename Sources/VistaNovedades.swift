@@ -167,7 +167,7 @@ struct NovedadesView: View {
 
     private func fila(_ g: GrupoNovedad, nueva: Bool) -> some View {
         let t = almacen.textoVisible(g.primera, miId: sesion.miId)
-        let autor = g.primera.autorId == sesion.miId ? "Tú" : almacen.nombre(de: g.primera.autorId, miId: sesion.miId)
+        let autor = g.primera.autorId == sesion.miId ? sesion.miNombre : almacen.nombre(de: g.primera.autorId, miId: sesion.miId)
         let extra = g.cantidad > 1 ? " y \(g.cantidad - 1) más" : ""
 
         return HStack(alignment: .top, spacing: 12) {
