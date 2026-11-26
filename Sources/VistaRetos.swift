@@ -390,6 +390,8 @@ struct CamaraReto: View {
 struct SelectorCamara: UIViewControllerRepresentable {
     let alHacerFoto: (UIImage) -> Void
     let alCancelar: () -> Void
+    /// Selfies con la frontal; billetes y documentos con la trasera.
+    var frontal: Bool = true
 
     func makeCoordinator() -> Coordinador {
         Coordinador(alHacerFoto: alHacerFoto, alCancelar: alCancelar)
@@ -398,7 +400,7 @@ struct SelectorCamara: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> UIImagePickerController {
         let selector = UIImagePickerController()
         selector.sourceType = .camera
-        if UIImagePickerController.isCameraDeviceAvailable(.front) {
+        if frontal && UIImagePickerController.isCameraDeviceAvailable(.front) {
             selector.cameraDevice = .front
         }
         selector.delegate = context.coordinator

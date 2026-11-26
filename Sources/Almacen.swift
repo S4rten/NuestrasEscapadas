@@ -1,4 +1,5 @@
 import Foundation
+import FirebaseAuth
 import FirebaseFirestore
 
 // ============================================================================
@@ -39,6 +40,15 @@ final class Almacen: ObservableObject {
     @Published private(set) var pagos: [PagoPareja] = []
     @Published private(set) var fechasEspeciales: [FechaEspecial] = []
     @Published private(set) var deseos: [Deseo] = []
+    @Published private(set) var accesos: [Acceso] = []
+    @Published private(set) var novedades: [Novedad] = []
+    @Published private(set) var billetes: [Billete] = []
+    /// Imágenes de billetes ya descargadas, por ID. Solo se bajan cuando se ven.
+    @Published private(set) var billetesDescargados: [String: Data] = [:]
+    /// true si el espacio no admite iPhones nuevos (se cambia en Ajustes).
+    @Published private(set) var espacioCerrado = false
+    /// UID anónimo de Firebase de este iPhone.
+    @Published private(set) var miUid = ""
     /// true mientras haya cambios guardados en este iPhone que aún no han llegado a la nube.
     @Published private(set) var cambiosPendientes = false {
         didSet { programarAvisoSubida() }
@@ -69,21 +79,102 @@ final class Almacen: ObservableObject {
     private var listeners: [ListenerRegistration] = []
     private var codigo = ""
     private var fotosEnDescarga: Set<String> = []
+    private var billetesEnDescarga: Set<String> = []
     private var pendientesPorColeccion: [String: Bool] = [:]
+    private var miId = ""
+    private var novedadesLimpiadas = false
+
+    // MARK: Seguridad (inicio de sesión anónimo)
+    // Cada iPhone inicia sesión de forma anónima e invisible en Firebase. Las reglas
+    // solo dejan leer y escribir a los iPhones que tienen un documento en "accesos".
+
+    /// Devuelve el UID de este iPhone, iniciando sesión anónima si hace falta.
+    private func usuarioAnonimo() async throws -> String {
+        if let actual = Auth.auth().currentUser {
+            miUid = actual.uid
+            return actual.uid
+        }
+        let resultado = try await Auth.auth().signInAnonymously()
+        miUid = resultado.user.uid
+        return resultado.user.uid
+    }
+
+    private func claveAccesoConfirmado(_ codigo: String, _ uid: String) -> String {
+        "escapadas_acceso_\(codigo)_\(uid)"
+    }
+
+    /// Registra este iPhone en "accesos". Si ya se confirmó otra vez, no espera a la red
+    /// (así la app abre al momento aunque no haya conexión).
+    private func asegurarAcceso(codigo: String, miId: String, nombre: String) async throws {
+        let uid = try await usuarioAnonimo()
+        let referencia = Firestore.firestore()
+            .collection("parejas").document(codigo)
+            .collection(Coleccion.accesos.rawValue).document(uid)
+        let datos: [String: Any] = ["id": uid, "miId": miId, "nombre": nombre, "creadoEn": Date()]
+        let clave = claveAccesoConfirmado(codigo, uid)
+        if UserDefaults.standard.bool(forKey: clave) {
+            // Con bloque de respuesta: así no espera a la red (sirve sin conexión).
+            referencia.setData(["miId": miId, "nombre": nombre], merge: true) { _ in }
+            return
+        }
+        try await referencia.setData(datos)
+        UserDefaults.standard.set(true, forKey: clave)
+    }
+
+    /// Mensaje claro cuando Firebase rechaza la entrada.
+    static func mensajeAcceso(_ error: Error) -> String {
+        let ns = error as NSError
+        // 7 = permiso denegado (Firestore) · 17006 = método de acceso desactivado (Auth)
+        if ns.domain == "FIRFirestoreErrorDomain" && ns.code == 7 {
+            return "Este espacio está cerrado a iPhones nuevos. Pide a tu pareja que lo abra en Ajustes › Seguridad."
+        }
+        if ns.domain == "FIRAuthErrorDomain" && ns.code == 17006 {
+            return "Falta activar el inicio de sesión anónimo en la consola de Firebase (Authentication › Método de acceso › Anónimo)."
+        }
+        return "No se pudo entrar en el espacio: \(error.localizedDescription)"
+    }
+
+    /// Cierra o abre el espacio a iPhones nuevos.
+    func cambiarCierre(_ cerrado: Bool) {
+        guard !codigo.isEmpty else { return }
+        Firestore.firestore().collection("parejas").document(codigo)
+            .setData(["cerrado": cerrado], merge: true) { [weak self] error in
+                if let error = error {
+                    Task { @MainActor in self?.registrarFallo(error, "cambiar la seguridad") }
+                }
+            }
+    }
+
+    /// Quita el permiso a un iPhone (por ejemplo, uno antiguo o perdido).
+    func revocarAcceso(_ acceso: Acceso) {
+        guard acceso.id != miUid else { return }
+        borrar(id: acceso.id, de: .accesos)
+    }
 
     // MARK: Conexión
 
-    func conectar(codigo: String, miId: String, miNombre: String) {
+    func conectar(codigo: String, miId: String, miNombre: String) async {
         if self.codigo == codigo && !listeners.isEmpty {
             registrarMiembro(id: miId, nombre: miNombre)
             return
         }
         desconectar()
         self.codigo = codigo
+        self.miId = miId
         estado = .conectando
+
+        do {
+            try await asegurarAcceso(codigo: codigo, miId: miId, nombre: miNombre)
+        } catch {
+            if self.codigo == codigo { estado = .error(Almacen.mensajeAcceso(error)) }
+            return
+        }
+        // Si mientras tanto se salió del espacio o se cambió de código, no seguir.
+        guard self.codigo == codigo, listeners.isEmpty else { return }
 
         let base = Firestore.firestore().collection("parejas").document(codigo)
         registrarMiembro(id: miId, nombre: miNombre)
+        escucharEspacio(base)
 
         escuchar(.escapadas, en: base, destino: \Almacen.escapadas)
         escuchar(.vuelos, en: base, destino: \Almacen.vuelos)
@@ -97,6 +188,9 @@ final class Almacen: ObservableObject {
         escuchar(.pagos, en: base, destino: \Almacen.pagos)
         escuchar(.fechasEspeciales, en: base, destino: \Almacen.fechasEspeciales)
         escuchar(.deseos, en: base, destino: \Almacen.deseos)
+        escuchar(.accesos, en: base, destino: \Almacen.accesos)
+        escuchar(.novedades, en: base, destino: \Almacen.novedades)
+        escuchar(.billetes, en: base, destino: \Almacen.billetes)
         escucharMiembros(en: base)
     }
 
@@ -116,6 +210,13 @@ final class Almacen: ObservableObject {
         pagos = []
         fechasEspeciales = []
         deseos = []
+        accesos = []
+        novedades = []
+        billetes = []
+        billetesDescargados = [:]
+        billetesEnDescarga = []
+        espacioCerrado = false
+        novedadesLimpiadas = false
         pendientesPorColeccion = [:]
         cambiosPendientes = false
         fotosDescargadas = [:]
@@ -155,6 +256,18 @@ final class Almacen: ObservableObject {
                 self[keyPath: destino] = elementos
                 self.estado = .enVivo
                 if coleccion == .escapadas { self.escapadasCargadas = true }
+                if coleccion == .novedades { self.limpiarNovedadesAntiguas() }
+            }
+        }
+        listeners.append(registro)
+    }
+
+    /// Escucha el documento del propio espacio (de momento solo el candado "cerrado").
+    private func escucharEspacio(_ base: DocumentReference) {
+        let registro = base.addSnapshotListener { [weak self] snapshot, _ in
+            let cerrado = (snapshot?.data()?["cerrado"] as? Bool) ?? false
+            Task { @MainActor in
+                self?.espacioCerrado = cerrado
             }
         }
         listeners.append(registro)
@@ -178,7 +291,9 @@ final class Almacen: ObservableObject {
     }
 
     /// Consulta (sin conectarse) quién está ya en un espacio. Se usa al unirse con un código.
-    func consultarMiembros(codigo: String) async throws -> [Miembro] {
+    /// Primero registra este iPhone en el espacio: sin eso, las reglas no dejan leer nada.
+    func consultarMiembros(codigo: String, miId: String, nombre: String) async throws -> [Miembro] {
+        try await asegurarAcceso(codigo: codigo, miId: miId, nombre: nombre)
         let instantanea = try await Firestore.firestore()
             .collection("parejas").document(codigo)
             .collection("miembros").getDocuments()
@@ -295,8 +410,12 @@ final class Almacen: ObservableObject {
     }
 
     /// Crea o reemplaza un documento completo (solo para elementos nuevos o formularios completos).
-    func guardar<T: Encodable & Identifiable>(_ valor: T, en coleccion: Coleccion) where T.ID == String {
+    /// Si es nuevo, se apunta en "Actividad reciente" (salvo `anotar: false`).
+    func guardar<T: Encodable & Identifiable>(_ valor: T, en coleccion: Coleccion, anotar: Bool = true) where T.ID == String {
         guard !codigo.isEmpty else { return }
+        if anotar && !existe(valor.id, en: coleccion), let n = Almacen.describir(valor) {
+            anotarNovedad(icono: n.icono, texto: n.texto, escapadaId: n.escapadaId)
+        }
         do {
             try referencia(coleccion, valor.id).setData(from: valor, merge: false) { [weak self] error in
                 if let error = error {
@@ -365,6 +484,10 @@ final class Almacen: ObservableObject {
             lote.deleteDocument(referencia(.fotos, r.id))
         }
         for p in pagos where p.escapadaId == escapada.id { lote.deleteDocument(referencia(.pagos, p.id)) }
+        for b in billetes where b.escapadaId == escapada.id {
+            lote.deleteDocument(referencia(.billetes, b.id))
+            lote.deleteDocument(referencia(.billetesDatos, b.id))
+        }
         lote.deleteDocument(referencia(.escapadas, escapada.id))
         lote.commit { [weak self] error in
             if let error = error {
@@ -396,6 +519,9 @@ final class Almacen: ObservableObject {
             "completadoPorId": miId,
             "fotoEn": ahora
         ], forDocument: referencia(.retos, reto.id))
+        if !reto.completado {
+            anotarNovedad(icono: "📸", texto: "completó el reto «\(reto.texto)»", escapadaId: reto.escapadaId)
+        }
         lote.commit { [weak self] error in
             if let error = error {
                 Task { @MainActor in self?.registrarFallo(error, "subir la foto") }
@@ -433,6 +559,187 @@ final class Almacen: ObservableObject {
                 Task { @MainActor in self?.registrarFallo(error, "borrar el reto") }
             }
         }
+    }
+
+    // MARK: Billetes de las reservas (misma idea que las fotos de los retos)
+
+    func billetesDe(reserva reservaId: String) -> [Billete] {
+        billetes.filter { $0.reservaId == reservaId }.sorted { $0.creadoEn < $1.creadoEn }
+    }
+
+    func guardarBillete(_ datos: Data, reservaId: String, escapadaId: String, titulo: String, miId: String) {
+        guard !codigo.isEmpty else { return }
+        var billete = Billete()
+        billete.escapadaId = escapadaId
+        billete.reservaId = reservaId
+        billete.titulo = titulo
+        billete.creadoPorId = miId
+        billete.creadoEn = Date()
+        billetesDescargados[billete.id] = datos
+
+        let lote = Firestore.firestore().batch()
+        do {
+            try lote.setData(from: billete, forDocument: referencia(.billetes, billete.id))
+        } catch {
+            registrarFallo(error, "guardar el billete")
+            return
+        }
+        lote.setData([
+            "id": billete.id,
+            "escapadaId": escapadaId,
+            "datos": datos
+        ], forDocument: referencia(.billetesDatos, billete.id))
+        anotarNovedad(icono: "🎫", texto: "añadió un billete: \(titulo)", escapadaId: escapadaId)
+        lote.commit { [weak self] error in
+            if let error = error {
+                Task { @MainActor in self?.registrarFallo(error, "subir el billete") }
+            }
+        }
+    }
+
+    func borrarBillete(_ billete: Billete) {
+        guard !codigo.isEmpty else { return }
+        billetesDescargados[billete.id] = nil
+        let lote = Firestore.firestore().batch()
+        lote.deleteDocument(referencia(.billetes, billete.id))
+        lote.deleteDocument(referencia(.billetesDatos, billete.id))
+        lote.commit { [weak self] error in
+            if let error = error {
+                Task { @MainActor in self?.registrarFallo(error, "borrar el billete") }
+            }
+        }
+    }
+
+    /// Borra un vuelo, tren o alojamiento junto con sus billetes.
+    func borrarReserva(id: String, de coleccion: Coleccion) {
+        guard !codigo.isEmpty else { return }
+        let lote = Firestore.firestore().batch()
+        for b in billetes where b.reservaId == id {
+            billetesDescargados[b.id] = nil
+            lote.deleteDocument(referencia(.billetes, b.id))
+            lote.deleteDocument(referencia(.billetesDatos, b.id))
+        }
+        lote.deleteDocument(referencia(coleccion, id))
+        lote.commit { [weak self] error in
+            if let error = error {
+                Task { @MainActor in self?.registrarFallo(error, "borrar la reserva") }
+            }
+        }
+    }
+
+    /// Descarga la imagen de un billete si aún no está en memoria
+    /// (Firestore la deja guardada en el iPhone para verla sin conexión).
+    func cargarBillete(_ billete: Billete) {
+        guard !codigo.isEmpty else { return }
+        let clave = billete.id
+        guard billetesDescargados[clave] == nil, !billetesEnDescarga.contains(clave) else { return }
+        billetesEnDescarga.insert(clave)
+        referencia(.billetesDatos, billete.id).getDocument { [weak self] snapshot, _ in
+            let datos = snapshot?.data()?["datos"] as? Data
+            Task { @MainActor in
+                guard let self = self else { return }
+                self.billetesEnDescarga.remove(clave)
+                if let datos = datos {
+                    self.billetesDescargados[clave] = datos
+                }
+            }
+        }
+    }
+
+    /// Descarga los datos de un documento de imagen (para la copia de seguridad).
+    func descargarDatos(_ coleccion: Coleccion, id: String) async -> Data? {
+        guard !codigo.isEmpty else { return nil }
+        let snapshot = try? await referencia(coleccion, id).getDocument()
+        return snapshot?.data()?["datos"] as? Data
+    }
+
+    /// Sube una imagen tal cual (para restaurar una copia de seguridad).
+    func subirDatos(_ datos: Data, a coleccion: Coleccion, id: String, escapadaId: String) {
+        guard !codigo.isEmpty else { return }
+        referencia(coleccion, id).setData(["id": id, "escapadaId": escapadaId, "datos": datos]) { [weak self] error in
+            if let error = error {
+                Task { @MainActor in self?.registrarFallo(error, "restaurar una imagen") }
+            }
+        }
+    }
+
+    // MARK: Actividad reciente
+
+    /// ¿Existe ya un documento con ese ID? (para saber si un guardado es nuevo)
+    func existe(_ id: String, en coleccion: Coleccion) -> Bool {
+        switch coleccion {
+        case .escapadas: return escapadas.contains { $0.id == id }
+        case .vuelos: return vuelos.contains { $0.id == id }
+        case .trenes: return trenes.contains { $0.id == id }
+        case .alojamientos: return alojamientos.contains { $0.id == id }
+        case .gastos: return gastos.contains { $0.id == id }
+        case .checklist: return checklist.contains { $0.id == id }
+        case .actividades: return actividades.contains { $0.id == id }
+        case .ideas: return ideas.contains { $0.id == id }
+        case .retos: return retos.contains { $0.id == id }
+        case .pagos: return pagos.contains { $0.id == id }
+        case .fechasEspeciales: return fechasEspeciales.contains { $0.id == id }
+        case .deseos: return deseos.contains { $0.id == id }
+        case .accesos: return accesos.contains { $0.id == id }
+        case .novedades: return novedades.contains { $0.id == id }
+        case .billetes: return billetes.contains { $0.id == id }
+        case .fotos, .billetesDatos: return false
+        }
+    }
+
+    /// Texto de la novedad para cada tipo de elemento nuevo.
+    static func describir(_ valor: Any) -> (icono: String, texto: String, escapadaId: String)? {
+        switch valor {
+        case let e as Escapada:
+            return ("🗺️", "creó la escapada «\(e.titulo)»", e.id)
+        case let v as Vuelo:
+            return ("✈️", "añadió un vuelo \(v.origen) → \(v.destino)", v.escapadaId)
+        case let t as TrenViaje:
+            return ("🚂", "añadió un tren \(t.estacionOrigen) → \(t.estacionDestino)", t.escapadaId)
+        case let a as Alojamiento:
+            return ("🛏️", "añadió el alojamiento \(a.nombre.isEmpty ? "reservado" : a.nombre)", a.escapadaId)
+        case let g as Gasto:
+            return ("💶", "añadió un gasto: \(g.concepto) (\(g.importe.formatoDivisa()))", g.escapadaId)
+        case let c as ItemChecklist:
+            return ("🧳", "añadió a la lista: \(c.texto)", c.escapadaId)
+        case let a as Actividad:
+            return ("📍", "añadió un plan: \(a.nombreSitio)", a.escapadaId)
+        case let i as Idea:
+            return ("💡", "propuso una idea: \(i.texto)", i.escapadaId)
+        case let r as Reto:
+            return ("📸", "añadió un reto: \(r.texto)", r.escapadaId)
+        case let p as PagoPareja:
+            return ("🤝", "registró un pago de \(p.importe.formatoDivisa())", p.escapadaId)
+        case let f as FechaEspecial:
+            return ("💝", "añadió la fecha especial \(f.emoji) \(f.titulo)", "")
+        case let d as Deseo:
+            return ("⭐️", "añadió a la wishlist: \(d.titulo)", "")
+        default:
+            return nil
+        }
+    }
+
+    func anotarNovedad(icono: String, texto: String, escapadaId: String) {
+        guard !codigo.isEmpty, !miId.isEmpty else { return }
+        var n = Novedad()
+        n.autorId = miId
+        n.icono = icono
+        n.texto = texto
+        n.escapadaId = escapadaId
+        n.fecha = Date()
+        try? referencia(.novedades, n.id).setData(from: n)
+    }
+
+    /// Las novedades de hace más de 30 días se borran solas (una vez por sesión).
+    private func limpiarNovedadesAntiguas() {
+        guard !novedadesLimpiadas, !codigo.isEmpty else { return }
+        novedadesLimpiadas = true
+        let limite = Date().sumando(dias: -30)
+        let viejas = novedades.filter { $0.fecha < limite }.prefix(400)
+        guard !viejas.isEmpty else { return }
+        let lote = Firestore.firestore().batch()
+        for n in viejas { lote.deleteDocument(referencia(.novedades, n.id)) }
+        lote.commit()
     }
 
     /// Descarga la foto de un reto si aún no está en memoria.

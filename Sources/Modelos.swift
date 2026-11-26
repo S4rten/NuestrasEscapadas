@@ -73,6 +73,7 @@ enum Coleccion: String, CaseIterable {
     case retos, fotos
     case pagos, fechasEspeciales
     case deseos
+    case accesos, novedades, billetes, billetesDatos
 }
 
 struct Miembro: Identifiable, Hashable {
@@ -432,10 +433,14 @@ struct Actividad: Identifiable, Codable {
     var completada: Bool = false
     var creadaEn: Date = Date()
     var todoElDia: Bool = false             // ocupa el día entero (parque de atracciones, excursión…)
+    var latitud: Double? = nil              // posición en el mapa del día (se busca sola por el nombre)
+    var longitud: Double? = nil
+    var ubicacionBuscada: Bool = false      // true si ya se buscó (aunque no se encontrara)
 
     enum CodingKeys: String, CodingKey {
         case id, escapadaId, dia, nombreSitio, urlSitio, hora, completada, creadaEn
         case todoElDia
+        case latitud, longitud, ubicacionBuscada
     }
 }
 
@@ -451,6 +456,9 @@ extension Actividad {
         completada = c.valor(.completada, false)
         creadaEn = c.valor(.creadaEn, Date())
         todoElDia = c.valor(.todoElDia, false)
+        latitud = try? c.decodeIfPresent(Double.self, forKey: .latitud)
+        longitud = try? c.decodeIfPresent(Double.self, forKey: .longitud)
+        ubicacionBuscada = c.valor(.ubicacionBuscada, false)
     }
 }
 
@@ -528,9 +536,22 @@ struct Deseo: Identifiable, Codable {
     var cumplidoEn: Date? = nil
     var creadoPorId: String = ""
     var creadoEn: Date = Date()
+    // Ubicación del lugar (se busca sola) para relacionarlo con escapadas por país o cercanía.
+    var latitud: Double? = nil
+    var longitud: Double? = nil
+    var paisCodigo: String = ""
+    var esPais: Bool = false                // el lugar es un país entero (ej: "Italia")
+    var ubicacionBuscada: String = ""       // texto que se buscó la última vez ("" = nunca)
 
     enum CodingKeys: String, CodingKey {
         case id, titulo, lugar, notas, categoria, votos, cumplido, cumplidoEn, creadoPorId, creadoEn
+        case latitud, longitud, paisCodigo, esPais, ubicacionBuscada
+    }
+
+    /// Texto que identifica el sitio: el lugar o, si es un destino sin lugar, el propio título.
+    var textoUbicacion: String {
+        let base = lugar.recortado.isEmpty && categoria == .destino ? titulo : lugar
+        return base.recortado
     }
 }
 
@@ -547,6 +568,95 @@ extension Deseo {
         cumplidoEn = try? c.decodeIfPresent(Date.self, forKey: .cumplidoEn)
         creadoPorId = c.valor(.creadoPorId, "")
         creadoEn = c.valor(.creadoEn, Date())
+        latitud = try? c.decodeIfPresent(Double.self, forKey: .latitud)
+        longitud = try? c.decodeIfPresent(Double.self, forKey: .longitud)
+        paisCodigo = c.valor(.paisCodigo, "")
+        esPais = c.valor(.esPais, false)
+        ubicacionBuscada = c.valor(.ubicacionBuscada, "")
+    }
+}
+
+// ============================================================================
+// ACCESOS: iPhones con permiso para entrar en el espacio (uno por usuario anónimo)
+// ============================================================================
+
+struct Acceso: Identifiable, Codable {
+    var id: String = ""                     // UID anónimo de Firebase de ese iPhone
+    var miId: String = ""                   // ID de la persona dentro de la app
+    var nombre: String = ""
+    var creadoEn: Date = Date()
+
+    enum CodingKeys: String, CodingKey {
+        case id, miId, nombre, creadoEn
+    }
+}
+
+extension Acceso {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = c.valor(.id, "")
+        miId = c.valor(.miId, "")
+        nombre = c.valor(.nombre, "")
+        creadoEn = c.valor(.creadoEn, Date())
+    }
+}
+
+// ============================================================================
+// BILLETES: fotos de tarjetas de embarque, QR de entradas… de una reserva.
+// La imagen va aparte, en "billetesDatos", con el mismo ID.
+// ============================================================================
+
+struct Billete: Identifiable, Codable {
+    var id: String = nuevoId()
+    var escapadaId: String = ""
+    var reservaId: String = ""              // vuelo, tren o alojamiento
+    var titulo: String = ""
+    var creadoPorId: String = ""
+    var creadoEn: Date = Date()
+
+    enum CodingKeys: String, CodingKey {
+        case id, escapadaId, reservaId, titulo, creadoPorId, creadoEn
+    }
+}
+
+extension Billete {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = c.valor(.id, nuevoId())
+        escapadaId = c.valor(.escapadaId, "")
+        reservaId = c.valor(.reservaId, "")
+        titulo = c.valor(.titulo, "")
+        creadoPorId = c.valor(.creadoPorId, "")
+        creadoEn = c.valor(.creadoEn, Date())
+    }
+}
+
+// ============================================================================
+// NOVEDADES: lo último que ha hecho cada uno (para "Actividad reciente")
+// ============================================================================
+
+struct Novedad: Identifiable, Codable {
+    var id: String = nuevoId()
+    var autorId: String = ""
+    var icono: String = "✨"
+    var texto: String = ""                  // ej: "añadió un gasto: Cena (45,00 €)"
+    var escapadaId: String = ""             // "" si no es de una escapada (deseos, fechas…)
+    var fecha: Date = Date()
+
+    enum CodingKeys: String, CodingKey {
+        case id, autorId, icono, texto, escapadaId, fecha
+    }
+}
+
+extension Novedad {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = c.valor(.id, nuevoId())
+        autorId = c.valor(.autorId, "")
+        icono = c.valor(.icono, "✨")
+        texto = c.valor(.texto, "")
+        escapadaId = c.valor(.escapadaId, "")
+        fecha = c.valor(.fecha, Date())
     }
 }
 

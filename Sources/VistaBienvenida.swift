@@ -141,7 +141,7 @@ struct BienvenidaView: View {
         consultando = true
         Task {
             do {
-                let encontrados = try await almacen.consultarMiembros(codigo: codigo)
+                let encontrados = try await almacen.consultarMiembros(codigo: codigo, miId: sesion.miId, nombre: nombre.recortado)
                 consultando = false
                 if encontrados.isEmpty {
                     mostrandoConfirmarNuevo = true
@@ -151,7 +151,7 @@ struct BienvenidaView: View {
                 }
             } catch {
                 consultando = false
-                mensajeError = "No se pudo comprobar el código (\(error.localizedDescription)). Revisa la conexión y que las reglas de Firestore estén publicadas."
+                mensajeError = Almacen.mensajeAcceso(error)
             }
         }
     }

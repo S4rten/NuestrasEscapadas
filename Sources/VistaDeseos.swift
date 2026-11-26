@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import CoreLocation
 
 // ============================================================================
 // WISHLIST DE LA PAREJA: sitios y experiencias que queréis hacer algún día.
@@ -78,19 +79,74 @@ struct DeseosView: View {
         }.count
     }
 
-    /// Escapada que encaja con el deseo (por destino). Nunca destapa sorpresas ocultas.
+    /// Escapada que encaja con el deseo. Nunca destapa sorpresas ocultas.
+    ///  1. Si el deseo es un país entero ("Italia"): cualquier escapada a ese país.
+    ///  2. Si tiene coordenadas: una escapada a menos de 40 km ("Roma" = "Rome").
+    ///  3. Si no se pudo localizar: comparando los nombres.
     private func escapadaRelacionada(_ d: Deseo) -> Escapada? {
-        let base = d.lugar.isEmpty && d.categoria == .destino ? d.titulo : d.lugar
-        let clave = base.recortado.lowercased()
-        guard clave.count >= 3 else { return nil }
-        return almacen.escapadas
+        let candidatas = almacen.escapadas
             .filter { !$0.sorpresaOculta(para: sesion.miId) }
             .sorted { $0.fechaInicio > $1.fechaInicio }
-            .first { e in
-                let destino = e.destino.recortado.lowercased()
-                guard !destino.isEmpty else { return false }
-                return destino.contains(clave) || clave.contains(destino)
+
+        if d.esPais && !d.paisCodigo.isEmpty {
+            return candidatas.first { $0.paisCodigo.uppercased() == d.paisCodigo.uppercased() }
+        }
+
+        if let lat = d.latitud, let lon = d.longitud {
+            let punto = CLLocation(latitude: lat, longitude: lon)
+            let cercana = candidatas.first { e in
+                guard let elat = e.latitud, let elon = e.longitud else { return false }
+                return punto.distance(from: CLLocation(latitude: elat, longitude: elon)) < 40_000
             }
+            if let cercana = cercana { return cercana }
+        }
+
+        let clave = d.textoUbicacion.lowercased()
+        guard clave.count >= 3 else { return nil }
+        return candidatas.first { e in
+            let destino = e.destino.recortado.lowercased()
+            guard !destino.isEmpty else { return false }
+            return destino.contains(clave) || clave.contains(destino)
+        }
+    }
+
+    /// Cambia cada vez que hay un deseo cuyo lugar no se ha buscado todavía.
+    private var firmaUbicaciones: String {
+        almacen.deseos
+            .filter { !$0.textoUbicacion.isEmpty && $0.textoUbicacion != $0.ubicacionBuscada }
+            .map { "\($0.id):\($0.textoUbicacion)" }
+            .joined(separator: "|")
+    }
+
+    /// Localiza (país y coordenadas) los deseos nuevos o con el lugar cambiado.
+    private func localizarDeseos() async {
+        let pendientes = almacen.deseos.filter {
+            !$0.textoUbicacion.isEmpty && $0.textoUbicacion != $0.ubicacionBuscada
+        }
+        guard !pendientes.isEmpty else { return }
+        try? await Task.sleep(nanoseconds: 800_000_000)   // espera a que termine de escribirse
+        let geocoder = CLGeocoder()
+        // Apple limita las búsquedas seguidas: como mucho 10 por vez.
+        for d in pendientes.prefix(10) {
+            if Task.isCancelled { return }
+            let texto = d.textoUbicacion
+            var campos: [String: Any] = ["ubicacionBuscada": texto]
+            if let marca = try? await geocoder.geocodeAddressString(texto).first {
+                if let ubicacion = marca.location {
+                    campos["latitud"] = ubicacion.coordinate.latitude
+                    campos["longitud"] = ubicacion.coordinate.longitude
+                }
+                campos["paisCodigo"] = marca.isoCountryCode ?? ""
+                // Es un país entero si no hay ciudad ni región (ej: "Italia", "Japón").
+                campos["esPais"] = marca.locality == nil && marca.administrativeArea == nil && marca.isoCountryCode != nil
+            } else {
+                campos["latitud"] = NSNull()
+                campos["longitud"] = NSNull()
+                campos["paisCodigo"] = ""
+                campos["esPais"] = false
+            }
+            almacen.actualizar(d.id, en: .deseos, campos: campos)
+        }
     }
 
     // MARK: Vista
@@ -165,6 +221,7 @@ struct DeseosView: View {
         }
         .listStyle(.insetGrouped)
         .scrollDismissesKeyboard(.interactively)
+        .task(id: firmaUbicaciones) { await localizarDeseos() }
         .animation(.default, value: almacen.deseos.map { "\($0.id)\($0.cumplido)\(puntuacion($0.votos))" })
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {

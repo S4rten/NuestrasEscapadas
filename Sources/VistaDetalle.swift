@@ -35,6 +35,7 @@ enum HojaDetalle: Identifiable {
     case gastoEnDia(Date)
     case camaraReto(Reto)
     case fotoReto(Reto)
+    case billetes(reservaId: String, titulo: String)
     case editar
 
     var id: String {
@@ -46,6 +47,7 @@ enum HojaDetalle: Identifiable {
         case .gastoEnDia(let fecha): return "gasto-dia-\(Int(fecha.timeIntervalSince1970))"
         case .camaraReto(let r): return "reto-camara-\(r.id)"
         case .fotoReto(let r): return "reto-foto-\(r.id)"
+        case .billetes(let reservaId, _): return "billetes-\(reservaId)"
         case .editar: return "editar"
         }
     }
@@ -61,7 +63,10 @@ struct DetalleEscapadaView: View {
     @State private var pestana: PestanaDetalle = .plan
     @State private var hoja: HojaDetalle? = nil
     @State private var confirmandoBorrado = false
+    @State private var confirmandoCalendario = false
+    @State private var mensajeCalendario: String? = nil
     @ObservedObject private var red = MonitorConexion.compartido
+    @ObservedObject private var visto = VistoReciente.compartido
 
     var body: some View {
         if let escapada = almacen.escapada(escapadaId) {
@@ -142,6 +147,15 @@ struct DetalleEscapadaView: View {
                         } label: {
                             Label("Editar escapada", systemImage: "pencil")
                         }
+                        Button {
+                            if Calendario.fechaAnadida(e.id) != nil {
+                                confirmandoCalendario = true
+                            } else {
+                                anadirAlCalendario(e)
+                            }
+                        } label: {
+                            Label("Añadir al Calendario", systemImage: "calendar.badge.plus")
+                        }
                         Button(role: .destructive) {
                             confirmandoBorrado = true
                         } label: {
@@ -163,7 +177,34 @@ struct DetalleEscapadaView: View {
             }
             Button("Cancelar", role: .cancel) {}
         } message: {
-            Text("Se borrarán las reservas, gastos, listas, retos con sus fotos y recuerdos de este viaje en los dos iPhones.")
+            Text("Se borrarán las reservas con sus billetes, gastos, listas, retos con sus fotos y recuerdos de este viaje en los dos iPhones.")
+        }
+        .confirmationDialog("Ya la añadiste al Calendario", isPresented: $confirmandoCalendario, titleVisibility: .visible) {
+            Button("Añadir otra vez") { anadirAlCalendario(e) }
+            Button("Cancelar", role: .cancel) {}
+        } message: {
+            Text("Se añadió el \(Calendario.fechaAnadida(e.id)?.formatted(date: .abbreviated, time: .shortened) ?? "—"). Si vuelves a añadirla, los eventos saldrán repetidos (borra antes los antiguos si has cambiado algo).")
+        }
+        .alert("Calendario", isPresented: Binding(
+            get: { mensajeCalendario != nil },
+            set: { if !$0 { mensajeCalendario = nil } }
+        )) {
+            Button("Vale", role: .cancel) {}
+        } message: {
+            Text(mensajeCalendario ?? "")
+        }
+        .onAppear { visto.marcarVista(escapadaId: e.id) }
+        .onDisappear { visto.marcarVista(escapadaId: e.id) }
+    }
+
+    private func anadirAlCalendario(_ e: Escapada) {
+        Task {
+            do {
+                let n = try await Calendario.anadir(e, almacen: almacen)
+                mensajeCalendario = "Añadidos \(n) \(n == 1 ? "evento" : "eventos") a tu calendario, con avisos antes de vuelos, trenes y planes."
+            } catch {
+                mensajeCalendario = error.localizedDescription
+            }
         }
     }
 
@@ -217,6 +258,8 @@ struct DetalleEscapadaView: View {
                 .ignoresSafeArea()
         case .fotoReto(let r):
             VisorFotoReto(retoId: r.id)
+        case .billetes(let reservaId, let titulo):
+            BilletesView(escapada: e, reservaId: reservaId, titulo: titulo)
         case .editar:
             NuevaEscapadaView(existente: e)
         }

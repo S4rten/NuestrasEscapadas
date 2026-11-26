@@ -10,6 +10,7 @@ struct InicioView: View {
     @ObservedObject private var red = MonitorConexion.compartido
     @State private var mostrandoNueva = false
     @State private var mostrandoAjustes = false
+    @State private var mostrandoNovedades = false
 
     /// Pestaña visible y un contador por pestaña: al salir de una pestaña se le
     /// cambia la identidad, así que al volver aparece cerrada desde el principio
@@ -34,6 +35,11 @@ struct InicioView: View {
                                     Text(sesion.miNombre)
                                         .font(.caption.bold())
                                 }
+                            }
+                        }
+                        ToolbarItem(placement: .topBarTrailing) {
+                            BotonNovedades {
+                                mostrandoNovedades = true
                             }
                         }
                         ToolbarItem(placement: .topBarTrailing) {
@@ -84,6 +90,9 @@ struct InicioView: View {
         }
         .sheet(isPresented: $mostrandoAjustes) {
             AjustesView()
+        }
+        .sheet(isPresented: $mostrandoNovedades) {
+            NovedadesView()
         }
     }
 }
@@ -218,6 +227,7 @@ struct TarjetaCuentaAtras: View {
                         .foregroundStyle(.primary)
                 }
                 Spacer()
+                PuntoNovedad(escapadaId: escapada.id)
             }
 
             HStack {
@@ -331,6 +341,7 @@ struct FilaEscapada: View {
                     .lineLimit(1)
             }
             Spacer()
+            PuntoNovedad(escapadaId: escapada.id)
             Chip(texto: escapada.haEmpezado ? "En curso" : (dias == 0 ? "¡Hoy!" : "En \(dias)d"))
         }
         .padding(14)

@@ -56,7 +56,17 @@ struct RaizView: View {
                     .task {
                         await divisas.actualizarSiHaceFalta()
                     }
+                    // Avisos del iPhone: se reprograman (1,5 s después) cada vez que cambia algo.
+                    .task(id: "\(sesion.miId)|\(almacen.firmaAvisos)") {
+                        try? await Task.sleep(nanoseconds: 1_500_000_000)
+                        if Task.isCancelled || !almacen.escapadasCargadas { return }
+                        await Avisos.compartido.reprogramar(almacen: almacen, miId: sesion.miId)
+                    }
             }
+        }
+        .onAppear {
+            // Que los avisos también se vean con la app abierta.
+            Avisos.compartido.configurar()
         }
     }
 }

@@ -45,6 +45,12 @@ struct PlanSecciones: View {
             }
 
             TextField("Sitio o plan (ej: Museo del Prado)", text: $nombre)
+                // Sitúa en el mapa del día los planes nuevos (esta fila siempre está visible).
+                .task(id: UbicadorPlanes.sinBuscar(almacen: almacen, escapada: escapada, dia: diaActivo).map { $0.id }.joined(separator: ",")) {
+                    try? await Task.sleep(nanoseconds: 600_000_000)
+                    if Task.isCancelled { return }
+                    await UbicadorPlanes.situar(almacen: almacen, escapada: escapada, dia: diaActivo)
+                }
 
             Toggle("Ocupa todo el día", isOn: $todoElDia)
             if !todoElDia {
@@ -100,6 +106,8 @@ struct PlanSecciones: View {
                 }
             }
         }
+
+        SeccionMapaDia(escapada: escapada, dia: diaActivo)
 
         SeccionGastosDelDia(escapada: escapada, dia: diaActivo, hoja: $hoja)
     }
@@ -185,6 +193,24 @@ struct PlanSecciones: View {
             }
         }
         .listRowBackground(evento.todoElDia ? Color.accentColor.opacity(0.12) : nil)
+        .contextMenu {
+            if let actividadId = evento.actividadId {
+                Button {
+                    almacen.actualizar(actividadId, en: .actividades, campos: [
+                        "latitud": NSNull(), "longitud": NSNull(), "ubicacionBuscada": true
+                    ])
+                } label: {
+                    Label("Quitar del mapa", systemImage: "mappin.slash")
+                }
+                Button {
+                    almacen.actualizar(actividadId, en: .actividades, campos: [
+                        "latitud": NSNull(), "longitud": NSNull(), "ubicacionBuscada": false
+                    ])
+                } label: {
+                    Label("Volver a buscar en el mapa", systemImage: "mappin.and.ellipse")
+                }
+            }
+        }
         .swipeActions(edge: .leading) {
             if let actividadId = evento.actividadId {
                 Button {

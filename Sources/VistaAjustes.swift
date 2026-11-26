@@ -98,7 +98,7 @@ struct AjustesView: View {
                 } header: {
                     Text("Código del espacio")
                 } footer: {
-                    Text("Tu pareja lo escribe al abrir la app por primera vez. No lo publiques: quien lo tenga puede ver y editar vuestros viajes.")
+                    Text("Tu pareja lo escribe al abrir la app por primera vez. No lo publiques. Cuando estéis los dos dentro, cierra el espacio en «Seguridad» y nadie más podrá entrar aunque tenga el código.")
                 }
 
                 Section("Miembros") {
@@ -122,6 +122,12 @@ struct AjustesView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+
+                SeccionSeguridad()
+
+                SeccionAjustesAvisos()
+
+                SeccionCopiaSeguridad()
 
                 Section {
                     Button {
@@ -171,6 +177,10 @@ struct AjustesView: View {
                 }
             }
             .onAppear { nombre = sesion.miNombre }
+            .onDisappear {
+                // Por si se cambiaron los avisos: reprogramarlos con lo último.
+                Task { await Avisos.compartido.reprogramar(almacen: almacen, miId: sesion.miId) }
+            }
             .confirmationDialog("¿Salir de este espacio?", isPresented: $confirmandoSalida, titleVisibility: .visible) {
                 Button("Salir", role: .destructive) {
                     almacen.desconectar()
@@ -181,6 +191,73 @@ struct AjustesView: View {
             } message: {
                 Text("Apunta el código \(sesion.codigo) antes de salir para poder volver a entrar.")
             }
+        }
+    }
+}
+
+// ============================================================================
+// SEGURIDAD: cerrar el espacio a iPhones nuevos y ver qué iPhones tienen acceso.
+// ============================================================================
+
+struct SeccionSeguridad: View {
+    @EnvironmentObject var almacen: Almacen
+    @EnvironmentObject var sesion: Sesion
+    @State private var revocando: Acceso? = nil
+
+    var body: some View {
+        let cerrado = Binding(
+            get: { almacen.espacioCerrado },
+            set: { almacen.cambiarCierre($0) }
+        )
+
+        Section {
+            Toggle(isOn: cerrado) {
+                Label("Cerrar a iPhones nuevos", systemImage: almacen.espacioCerrado ? "lock.fill" : "lock.open")
+            }
+
+            ForEach(almacen.accesos.sorted { $0.creadoEn < $1.creadoEn }) { acceso in
+                HStack {
+                    Image(systemName: "iphone")
+                        .foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(acceso.nombre.isEmpty ? "iPhone sin nombre" : acceso.nombre)
+                        Text("Desde el \(acceso.creadoEn.formatted(date: .abbreviated, time: .omitted))")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    if acceso.id == almacen.miUid {
+                        Chip(texto: "Este iPhone")
+                    }
+                }
+                .swipeActions(edge: .trailing) {
+                    if acceso.id != almacen.miUid {
+                        Button(role: .destructive) {
+                            revocando = acceso
+                        } label: {
+                            Label("Quitar", systemImage: "xmark.circle")
+                        }
+                    }
+                }
+            }
+        } header: {
+            Text("Seguridad")
+        } footer: {
+            Text(almacen.espacioCerrado
+                 ? "🔒 Cerrado: aunque alguien tenga el código, no podrá entrar. Si cambiáis de iPhone o reinstaláis la app, ábrelo un momento desde el otro iPhone."
+                 : "🔓 Abierto: cualquiera con el código puede unirse. Cerradlo cuando estéis los dos dentro. Desliza un iPhone para quitarle el acceso.")
+        }
+        .confirmationDialog("¿Quitar el acceso a este iPhone?", isPresented: Binding(
+            get: { revocando != nil },
+            set: { if !$0 { revocando = nil } }
+        ), titleVisibility: .visible) {
+            Button("Quitar acceso", role: .destructive) {
+                if let a = revocando { almacen.revocarAcceso(a) }
+                revocando = nil
+            }
+            Button("Cancelar", role: .cancel) { revocando = nil }
+        } message: {
+            Text("Dejará de ver y editar vuestros viajes. Si el espacio está abierto, podrá volver a entrar con el código.")
         }
     }
 }

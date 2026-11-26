@@ -13,12 +13,15 @@ struct ReservasSecciones: View {
         // Vuelos
         Section {
             ForEach(almacen.vuelosDe(escapada.id)) { vuelo in
-                TarjetaVuelo(vuelo: vuelo)
+                VStack(alignment: .leading, spacing: 8) {
+                    TarjetaVuelo(vuelo: vuelo)
+                    BotonBilletes(reservaId: vuelo.id, titulo: "Vuelo \(vuelo.origen) → \(vuelo.destino)", hoja: $hoja)
+                }
                     .contentShape(Rectangle())
                     .onTapGesture { hoja = .vuelo(vuelo) }
                     .swipeActions(edge: .trailing) {
                         Button(role: .destructive) {
-                            almacen.borrar(id: vuelo.id, de: .vuelos)
+                            almacen.borrarReserva(id: vuelo.id, de: .vuelos)
                         } label: {
                             Label("Borrar", systemImage: "trash")
                         }
@@ -36,12 +39,15 @@ struct ReservasSecciones: View {
         // Trenes
         Section {
             ForEach(almacen.trenesDe(escapada.id)) { tren in
-                TarjetaTren(tren: tren)
+                VStack(alignment: .leading, spacing: 8) {
+                    TarjetaTren(tren: tren)
+                    BotonBilletes(reservaId: tren.id, titulo: "Tren \(tren.estacionOrigen) → \(tren.estacionDestino)", hoja: $hoja)
+                }
                     .contentShape(Rectangle())
                     .onTapGesture { hoja = .tren(tren) }
                     .swipeActions(edge: .trailing) {
                         Button(role: .destructive) {
-                            almacen.borrar(id: tren.id, de: .trenes)
+                            almacen.borrarReserva(id: tren.id, de: .trenes)
                         } label: {
                             Label("Borrar", systemImage: "trash")
                         }
@@ -59,12 +65,15 @@ struct ReservasSecciones: View {
         // Alojamientos
         Section {
             ForEach(almacen.alojamientosDe(escapada.id)) { alojamiento in
-                TarjetaAlojamiento(alojamiento: alojamiento, destino: escapada.destino)
+                VStack(alignment: .leading, spacing: 8) {
+                    TarjetaAlojamiento(alojamiento: alojamiento, destino: escapada.destino)
+                    BotonBilletes(reservaId: alojamiento.id, titulo: alojamiento.nombre.isEmpty ? "Alojamiento" : alojamiento.nombre, hoja: $hoja)
+                }
                     .contentShape(Rectangle())
                     .onTapGesture { hoja = .alojamiento(alojamiento) }
                     .swipeActions(edge: .trailing) {
                         Button(role: .destructive) {
-                            almacen.borrar(id: alojamiento.id, de: .alojamientos)
+                            almacen.borrarReserva(id: alojamiento.id, de: .alojamientos)
                         } label: {
                             Label("Borrar", systemImage: "trash")
                         }
@@ -78,7 +87,7 @@ struct ReservasSecciones: View {
         } header: {
             Text("Alojamiento")
         } footer: {
-            Text("Toca una reserva para editarla y desliza para borrarla.")
+            Text("Toca una reserva para editarla y desliza para borrarla. En «Billetes» podéis guardar la tarjeta de embarque, el QR o la confirmación como foto.")
         }
     }
 }
