@@ -72,6 +72,7 @@ enum Coleccion: String, CaseIterable {
     case escapadas, vuelos, trenes, alojamientos, gastos, checklist, actividades, ideas
     case retos, fotos
     case pagos, fechasEspeciales
+    case deseos
 }
 
 struct Miembro: Identifiable, Hashable {
@@ -482,6 +483,71 @@ extension Idea {
 /// Puntuación de unos votos: suma de 👍 (+1) y 👎 (-1).
 func puntuacion(_ votos: [String: Int]) -> Int {
     votos.values.reduce(0, +)
+}
+
+// ============================================================================
+// WISHLIST: sitios y experiencias que queréis hacer algún día
+// ============================================================================
+
+enum CategoriaDeseo: String, CaseIterable, Identifiable, Codable {
+    case destino, experiencia, comida, aventura, relax, otro
+
+    var id: String { rawValue }
+
+    var emoji: String {
+        switch self {
+        case .destino: return "🌍"
+        case .experiencia: return "✨"
+        case .comida: return "🍽️"
+        case .aventura: return "🧗"
+        case .relax: return "🧖"
+        case .otro: return "💫"
+        }
+    }
+
+    var nombre: String {
+        switch self {
+        case .destino: return "Destino"
+        case .experiencia: return "Experiencia"
+        case .comida: return "Comida"
+        case .aventura: return "Aventura"
+        case .relax: return "Relax"
+        case .otro: return "Otro"
+        }
+    }
+}
+
+struct Deseo: Identifiable, Codable {
+    var id: String = nuevoId()
+    var titulo: String = ""
+    var lugar: String = ""                  // opcional: dónde (para convertirlo en escapada)
+    var notas: String = ""
+    var categoria: CategoriaDeseo = .destino
+    var votos: [String: Int] = [:]          // ID del miembro -> 1 (¡muchas ganas!) o -1 (no tanto)
+    var cumplido: Bool = false
+    var cumplidoEn: Date? = nil
+    var creadoPorId: String = ""
+    var creadoEn: Date = Date()
+
+    enum CodingKeys: String, CodingKey {
+        case id, titulo, lugar, notas, categoria, votos, cumplido, cumplidoEn, creadoPorId, creadoEn
+    }
+}
+
+extension Deseo {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = c.valor(.id, nuevoId())
+        titulo = c.valor(.titulo, "")
+        lugar = c.valor(.lugar, "")
+        notas = c.valor(.notas, "")
+        categoria = CategoriaDeseo(rawValue: c.valor(.categoria, "destino")) ?? .otro
+        votos = c.valor(.votos, [String: Int]())
+        cumplido = c.valor(.cumplido, false)
+        cumplidoEn = try? c.decodeIfPresent(Date.self, forKey: .cumplidoEn)
+        creadoPorId = c.valor(.creadoPorId, "")
+        creadoEn = c.valor(.creadoEn, Date())
+    }
 }
 
 // ============================================================================

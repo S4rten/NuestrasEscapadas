@@ -50,6 +50,10 @@ struct NuevaEscapadaView: View {
     let existente: Escapada?
     /// Para crear una escapada desde una fecha especial (aniversario, cumpleaños…).
     var fechaSugerida: Date? = nil
+    /// Para crear una escapada desde un deseo de la wishlist.
+    var tituloSugerido: String? = nil
+    var destinoSugerido: String? = nil
+    var iconoSugerido: String? = nil
 
     @State private var titulo = ""
     @State private var destino = ""
@@ -249,6 +253,9 @@ struct NuevaEscapadaView: View {
                 inicio = f
                 fin = f.sumando(dias: 2)
             }
+            if let t = tituloSugerido { titulo = t }
+            if let d = destinoSugerido, !d.recortado.isEmpty { destino = d }
+            if let i = iconoSugerido { icono = i }
             return
         }
         titulo = e.titulo

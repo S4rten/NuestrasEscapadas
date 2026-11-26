@@ -1,7 +1,7 @@
 import SwiftUI
 
 // ============================================================================
-// PANTALLA PRINCIPAL: pestañas Próximas · Mapa · Recuerdos
+// PANTALLA PRINCIPAL: pestañas Próximas · Mapa · Recuerdos · Deseos
 // ============================================================================
 
 struct InicioView: View {
@@ -15,7 +15,7 @@ struct InicioView: View {
     /// cambia la identidad, así que al volver aparece cerrada desde el principio
     /// (sin la escapada, estadística o ventana que tuvieras abierta).
     @State private var pestana = 0
-    @State private var reinicios = [0, 0, 0]
+    @State private var reinicios = [0, 0, 0, 0]
 
     var body: some View {
         TabView(selection: $pestana) {
@@ -65,6 +65,14 @@ struct InicioView: View {
             .id(reinicios[2])
             .tabItem { Label("Recuerdos", systemImage: "heart.fill") }
             .tag(2)
+
+            NavigationStack {
+                DeseosView()
+                    .navigationTitle("Wishlist")
+            }
+            .id(reinicios[3])
+            .tabItem { Label("Deseos", systemImage: "star.fill") }
+            .tag(3)
         }
         .onChange(of: pestana) { anterior, _ in
             if reinicios.indices.contains(anterior) {
@@ -127,13 +135,16 @@ struct ProximasView: View {
                     nuevaConFecha = FechaParaNueva(fecha: fecha)
                 }
 
-                if let primera = proximas.first {
+                // El viaje en curso ya sale como "Hoy": no se repite debajo.
+                let restantes = proximas.filter { $0.id != enCurso?.id }
+
+                if let primera = restantes.first {
                     NavigationLink(value: primera.id) {
                         TarjetaCuentaAtras(escapada: primera)
                     }
                     .buttonStyle(.plain)
 
-                    let siguientes = Array(proximas.dropFirst())
+                    let siguientes = Array(restantes.dropFirst())
                     if !siguientes.isEmpty {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("EN EL HORIZONTE")
@@ -152,7 +163,7 @@ struct ProximasView: View {
                 } else if !almacen.escapadasCargadas {
                     ProgressView("Conectando…")
                         .padding(.top, 60)
-                } else {
+                } else if enCurso == nil {
                     ContentUnavailableView {
                         Label("Sin escapadas próximas", systemImage: "airplane")
                     } description: {

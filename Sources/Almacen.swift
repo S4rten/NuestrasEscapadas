@@ -38,6 +38,7 @@ final class Almacen: ObservableObject {
     @Published private(set) var retos: [Reto] = []
     @Published private(set) var pagos: [PagoPareja] = []
     @Published private(set) var fechasEspeciales: [FechaEspecial] = []
+    @Published private(set) var deseos: [Deseo] = []
     /// true mientras haya cambios guardados en este iPhone que aún no han llegado a la nube.
     @Published private(set) var cambiosPendientes = false {
         didSet { programarAvisoSubida() }
@@ -95,6 +96,7 @@ final class Almacen: ObservableObject {
         escuchar(.retos, en: base, destino: \Almacen.retos)
         escuchar(.pagos, en: base, destino: \Almacen.pagos)
         escuchar(.fechasEspeciales, en: base, destino: \Almacen.fechasEspeciales)
+        escuchar(.deseos, en: base, destino: \Almacen.deseos)
         escucharMiembros(en: base)
     }
 
@@ -113,6 +115,7 @@ final class Almacen: ObservableObject {
         retos = []
         pagos = []
         fechasEspeciales = []
+        deseos = []
         pendientesPorColeccion = [:]
         cambiosPendientes = false
         fotosDescargadas = [:]
