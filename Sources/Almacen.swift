@@ -35,12 +35,16 @@ final class Almacen: ObservableObject {
     @Published private(set) var checklist: [ItemChecklist] = []
     @Published private(set) var actividades: [Actividad] = []
     @Published private(set) var ideas: [Idea] = []
+    @Published private(set) var retos: [Reto] = []
+    /// Fotos de retos ya descargadas, por `Reto.claveFoto`. Solo se bajan cuando se ven.
+    @Published private(set) var fotosDescargadas: [String: Data] = [:]
     @Published private(set) var miembros: [Miembro] = []
     @Published private(set) var estado: EstadoNube = .desconectado
     @Published private(set) var escapadasCargadas = false
 
     private var listeners: [ListenerRegistration] = []
     private var codigo = ""
+    private var fotosEnDescarga: Set<String> = []
 
     // MARK: Conexión
 
@@ -64,6 +68,7 @@ final class Almacen: ObservableObject {
         escuchar(.checklist, en: base, destino: \Almacen.checklist)
         escuchar(.actividades, en: base, destino: \Almacen.actividades)
         escuchar(.ideas, en: base, destino: \Almacen.ideas)
+        escuchar(.retos, en: base, destino: \Almacen.retos)
         escucharMiembros(en: base)
     }
 
@@ -79,6 +84,9 @@ final class Almacen: ObservableObject {
         checklist = []
         actividades = []
         ideas = []
+        retos = []
+        fotosDescargadas = [:]
+        fotosEnDescarga = []
         miembros = []
         escapadasCargadas = false
         estado = .desconectado
@@ -206,6 +214,14 @@ final class Almacen: ObservableObject {
         ideas.filter { $0.escapadaId == id }.sorted { $0.creadaEn < $1.creadaEn }
     }
 
+    func retosDe(_ id: String) -> [Reto] {
+        retos.filter { $0.escapadaId == id }.sorted { $0.creadoEn < $1.creadoEn }
+    }
+
+    func reto(_ id: String) -> Reto? {
+        retos.first(where: { $0.id == id })
+    }
+
     func totalGastado(_ id: String) -> Double {
         gastosDe(id).reduce(0) { $0 + $1.importe }
     }
@@ -274,10 +290,94 @@ final class Almacen: ObservableObject {
         for c in checklist where c.escapadaId == escapada.id { lote.deleteDocument(referencia(.checklist, c.id)) }
         for a in actividades where a.escapadaId == escapada.id { lote.deleteDocument(referencia(.actividades, a.id)) }
         for i in ideas where i.escapadaId == escapada.id { lote.deleteDocument(referencia(.ideas, i.id)) }
+        for r in retos where r.escapadaId == escapada.id {
+            lote.deleteDocument(referencia(.retos, r.id))
+            lote.deleteDocument(referencia(.fotos, r.id))
+        }
         lote.deleteDocument(referencia(.escapadas, escapada.id))
         lote.commit { [weak self] error in
             if let error = error {
                 Task { @MainActor in self?.registrarFallo(error, "borrar la escapada") }
+            }
+        }
+    }
+
+    // MARK: Fotos de los retos
+    // La foto (JPEG comprimido, < 1 MB) va en "fotos/{idDelReto}" para que la lista de retos
+    // se sincronice rápido y cada foto se descargue solo cuando alguien la mira.
+
+    /// Sube la foto y marca el reto como completado, todo en una sola operación.
+    func guardarFoto(_ datos: Data, para reto: Reto, miId: String) {
+        guard !codigo.isEmpty else { return }
+        let ahora = Date()
+        var actualizado = reto
+        actualizado.fotoEn = ahora
+        fotosDescargadas[actualizado.claveFoto] = datos
+
+        let lote = Firestore.firestore().batch()
+        lote.setData([
+            "id": reto.id,
+            "escapadaId": reto.escapadaId,
+            "datos": datos
+        ], forDocument: referencia(.fotos, reto.id))
+        lote.updateData([
+            "completado": true,
+            "completadoPorId": miId,
+            "fotoEn": ahora
+        ], forDocument: referencia(.retos, reto.id))
+        lote.commit { [weak self] error in
+            if let error = error {
+                Task { @MainActor in self?.registrarFallo(error, "subir la foto") }
+            }
+        }
+    }
+
+    /// Quita la foto y deja el reto pendiente otra vez.
+    func quitarFoto(de reto: Reto) {
+        guard !codigo.isEmpty else { return }
+        fotosDescargadas[reto.claveFoto] = nil
+        let lote = Firestore.firestore().batch()
+        lote.deleteDocument(referencia(.fotos, reto.id))
+        lote.updateData([
+            "completado": false,
+            "completadoPorId": "",
+            "fotoEn": FieldValue.delete()
+        ], forDocument: referencia(.retos, reto.id))
+        lote.commit { [weak self] error in
+            if let error = error {
+                Task { @MainActor in self?.registrarFallo(error, "quitar la foto") }
+            }
+        }
+    }
+
+    /// Borra el reto y su foto.
+    func borrarReto(_ reto: Reto) {
+        guard !codigo.isEmpty else { return }
+        fotosDescargadas[reto.claveFoto] = nil
+        let lote = Firestore.firestore().batch()
+        lote.deleteDocument(referencia(.retos, reto.id))
+        lote.deleteDocument(referencia(.fotos, reto.id))
+        lote.commit { [weak self] error in
+            if let error = error {
+                Task { @MainActor in self?.registrarFallo(error, "borrar el reto") }
+            }
+        }
+    }
+
+    /// Descarga la foto de un reto si aún no está en memoria.
+    func cargarFoto(de reto: Reto) {
+        guard !codigo.isEmpty, reto.completado else { return }
+        let clave = reto.claveFoto
+        guard fotosDescargadas[clave] == nil, !fotosEnDescarga.contains(clave) else { return }
+        fotosEnDescarga.insert(clave)
+        referencia(.fotos, reto.id).getDocument { [weak self] snapshot, _ in
+            let datos = snapshot?.data()?["datos"] as? Data
+            Task { @MainActor in
+                guard let self = self else { return }
+                self.fotosEnDescarga.remove(clave)
+                if let datos = datos {
+                    self.fotosDescargadas[clave] = datos
+                }
             }
         }
     }

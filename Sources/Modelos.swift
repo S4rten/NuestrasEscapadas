@@ -63,11 +63,14 @@ func urlMapa(consulta: String) -> URL? {
 //   parejas/{codigo}/miembros/{idDelIPhone}   -> nombre de cada persona
 //   parejas/{codigo}/escapadas/{id}           -> cada viaje
 //   parejas/{codigo}/vuelos|trenes|alojamientos|gastos|checklist|actividades|ideas/{id}
+//   parejas/{codigo}/retos/{id}               -> retos de fotos (sin la imagen)
+//   parejas/{codigo}/fotos/{idDelReto}        -> la foto de cada reto (se descarga al verla)
 //   (cada elemento es su propio documento y lleva "escapadaId")
 // ============================================================================
 
 enum Coleccion: String, CaseIterable {
     case escapadas, vuelos, trenes, alojamientos, gastos, checklist, actividades, ideas
+    case retos, fotos
 }
 
 struct Miembro: Identifiable, Hashable {
@@ -133,11 +136,13 @@ struct Escapada: Identifiable, Codable {
     var recuerdo: String = ""
     var valoracion: Valoracion = Valoracion()
     var creadaEn: Date = Date()
+    var presupuesto: Double = 0             // en euros; 0 = sin presupuesto
 
     enum CodingKeys: String, CodingKey {
         case id, titulo, destino, latitud, longitud, divisaDestino, fechaInicio, fechaFin, icono
         case tieneVuelos, tieneTrenes, esSorpresa, pistaSorpresa, diasRevelarAntes, creadaPorId
         case momentoFavorito, recuerdo, valoracion, creadaEn
+        case presupuesto
     }
 
     // MARK: Cálculos
@@ -200,6 +205,21 @@ extension Escapada {
         recuerdo = c.valor(.recuerdo, "")
         valoracion = c.valor(.valoracion, Valoracion())
         creadaEn = c.valor(.creadaEn, Date())
+        presupuesto = c.valor(.presupuesto, 0.0)
+    }
+}
+
+extension Escapada {
+    var tienePresupuesto: Bool { presupuesto > 0 }
+
+    /// El presupuesto solo se puede cambiar hasta el día anterior al viaje.
+    var presupuestoEditable: Bool { !haEmpezado }
+
+    /// Día del viaje (1, 2, 3…) al que pertenece una fecha, o nil si cae fuera del viaje.
+    func diaDelViaje(para fecha: Date) -> Int? {
+        let d = Calendar.current.dateComponents([.day], from: fechaInicio.inicioDelDia, to: fecha.inicioDelDia).day ?? -1
+        let dia = d + 1
+        return (1...totalDias).contains(dia) ? dia : nil
     }
 }
 
@@ -439,6 +459,59 @@ extension Idea {
         autorId = c.valor(.autorId, "")
         creadaEn = c.valor(.creadaEn, Date())
     }
+}
+
+// ============================================================================
+// RETOS DE FOTOS (la imagen va aparte, en la colección "fotos", con el mismo ID)
+// ============================================================================
+
+struct Reto: Identifiable, Codable {
+    var id: String = nuevoId()
+    var escapadaId: String = ""
+    var texto: String = ""
+    var creadoPorId: String = ""
+    var creadoEn: Date = Date()
+    var completado: Bool = false
+    var completadoPorId: String = ""
+    var fotoEn: Date? = nil                 // cuándo se subió la foto (sirve para refrescar la caché)
+
+    enum CodingKeys: String, CodingKey {
+        case id, escapadaId, texto, creadoPorId, creadoEn, completado, completadoPorId, fotoEn
+    }
+
+    /// Clave única de la foto actual: cambia cada vez que se sube una foto nueva.
+    var claveFoto: String {
+        "\(id)-\(Int((fotoEn ?? creadoEn).timeIntervalSince1970))"
+    }
+}
+
+extension Reto {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = c.valor(.id, nuevoId())
+        escapadaId = c.valor(.escapadaId, "")
+        texto = c.valor(.texto, "")
+        creadoPorId = c.valor(.creadoPorId, "")
+        creadoEn = c.valor(.creadoEn, Date())
+        completado = c.valor(.completado, false)
+        completadoPorId = c.valor(.completadoPorId, "")
+        fotoEn = try? c.decodeIfPresent(Date.self, forKey: .fotoEn)
+    }
+}
+
+enum RetosSugeridos {
+    static let lista = [
+        "🤳 Selfie con el monumento más famoso",
+        "🍽️ Selfie probando la comida típica",
+        "🌅 Foto del atardecer juntos",
+        "🗿 Imitad una estatua",
+        "🙋 Foto con alguien del lugar",
+        "🦘 Selfie saltando a la vez",
+        "☕️ El mejor café del viaje",
+        "🪧 Un cartel con un nombre gracioso",
+        "🌃 Foto nocturna de la ciudad",
+        "💋 Beso en el sitio más bonito"
+    ]
 }
 
 // ============================================================================

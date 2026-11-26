@@ -60,6 +60,7 @@ struct NuevaEscapadaView: View {
     @State private var esSorpresa = false
     @State private var pista = ""
     @State private var diasRevelar = 0
+    @State private var presupuestoTexto = ""
 
     @State private var destinoConfirmado = ""
     @State private var mostrarSugerencias = false
@@ -74,7 +75,24 @@ struct NuevaEscapadaView: View {
     }
 
     private var puedeGuardar: Bool {
-        !titulo.recortado.isEmpty && !destino.recortado.isEmpty && !guardando
+        !titulo.recortado.isEmpty && !destino.recortado.isEmpty && !guardando && presupuestoValido
+    }
+
+    /// Se puede fijar al crear el plan y cambiar hasta el día antes de salir.
+    private var puedeEditarPresupuesto: Bool {
+        existente?.presupuestoEditable ?? true
+    }
+
+    /// nil si el texto no es un número válido. Vacío = sin presupuesto (0).
+    private var presupuesto: Double? {
+        let t = presupuestoTexto.recortado.replacingOccurrences(of: ",", with: ".")
+        if t.isEmpty { return 0 }
+        guard let valor = Double(t), valor >= 0 else { return nil }
+        return valor
+    }
+
+    private var presupuestoValido: Bool {
+        !puedeEditarPresupuesto || presupuesto != nil
     }
 
     var body: some View {
@@ -148,6 +166,39 @@ struct NuevaEscapadaView: View {
                     DatePicker("Vuelta", selection: $fin, in: inicio..., displayedComponents: .date)
                 }
 
+                Section {
+                    if puedeEditarPresupuesto {
+                        HStack {
+                            TextField("Presupuesto total (opcional)", text: $presupuestoTexto)
+                                .keyboardType(.decimalPad)
+                            Text("€")
+                                .foregroundStyle(.secondary)
+                        }
+                    } else {
+                        HStack {
+                            Text("Presupuesto")
+                            Spacer()
+                            Text((existente?.tienePresupuesto ?? false)
+                                 ? (existente?.presupuesto ?? 0).formatoDivisa()
+                                 : "Sin presupuesto")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                } header: {
+                    Text("Presupuesto")
+                } footer: {
+                    if puedeEditarPresupuesto {
+                        if presupuesto == nil {
+                            Text("Escribe solo el número (ej: 600 o 600,50).")
+                                .foregroundStyle(.red)
+                        } else {
+                            Text("Lo que queréis gastar entre los dos en todo el viaje. Podéis cambiarlo hasta el día antes de salir.")
+                        }
+                    } else {
+                        Text("El viaje ya ha empezado, así que el presupuesto ya no se puede cambiar.")
+                    }
+                }
+
                 if puedeEditarSorpresa {
                     Section {
                         Toggle("🎁 Plan sorpresa para mi pareja", isOn: $esSorpresa)
@@ -202,6 +253,11 @@ struct NuevaEscapadaView: View {
         esSorpresa = e.esSorpresa
         pista = e.pistaSorpresa
         diasRevelar = e.diasRevelarAntes
+        presupuestoTexto = e.tienePresupuesto ? textoImporte(e.presupuesto) : ""
+    }
+
+    private func textoImporte(_ valor: Double) -> String {
+        valor.rounded() == valor ? String(format: "%.0f", valor) : String(format: "%.2f", valor)
     }
 
     private func elegir(_ sugerencia: MKLocalSearchCompletion) {
@@ -264,6 +320,9 @@ struct NuevaEscapadaView: View {
                     campos["pistaSorpresa"] = pista.recortado
                     campos["diasRevelarAntes"] = max(0, diasRevelar)
                 }
+                if puedeEditarPresupuesto, let p = presupuesto {
+                    campos["presupuesto"] = p
+                }
                 almacen.actualizar(e.id, en: .escapadas, campos: campos)
             } else {
                 var nueva = Escapada()
@@ -280,6 +339,7 @@ struct NuevaEscapadaView: View {
                 nueva.diasRevelarAntes = esSorpresa ? max(0, diasRevelar) : 0
                 nueva.creadaPorId = sesion.miId
                 nueva.creadaEn = Date()
+                nueva.presupuesto = presupuesto ?? 0
                 almacen.guardar(nueva, en: .escapadas)
             }
             dismiss()

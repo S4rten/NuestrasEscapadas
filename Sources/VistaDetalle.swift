@@ -9,6 +9,7 @@ enum PestanaDetalle: String, CaseIterable, Identifiable {
     case reservas = "Reservas"
     case lista = "Lista"
     case gastos = "Gastos"
+    case retos = "Retos"
     case recuerdo = "Recuerdo"
 
     var id: String { rawValue }
@@ -19,6 +20,7 @@ enum PestanaDetalle: String, CaseIterable, Identifiable {
         case .reservas: return "ticket.fill"
         case .lista: return "checklist"
         case .gastos: return "eurosign.circle.fill"
+        case .retos: return "camera.fill"
         case .recuerdo: return "heart.text.square.fill"
         }
     }
@@ -30,6 +32,9 @@ enum HojaDetalle: Identifiable {
     case tren(TrenViaje?)
     case alojamiento(Alojamiento?)
     case gasto(Gasto?)
+    case gastoEnDia(Date)
+    case camaraReto(Reto)
+    case fotoReto(Reto)
     case editar
 
     var id: String {
@@ -38,6 +43,9 @@ enum HojaDetalle: Identifiable {
         case .tren(let t): return "tren-\(t?.id ?? "nuevo")"
         case .alojamiento(let a): return "alojamiento-\(a?.id ?? "nuevo")"
         case .gasto(let g): return "gasto-\(g?.id ?? "nuevo")"
+        case .gastoEnDia(let fecha): return "gasto-dia-\(Int(fecha.timeIntervalSince1970))"
+        case .camaraReto(let r): return "reto-camara-\(r.id)"
+        case .fotoReto(let r): return "reto-foto-\(r.id)"
         case .editar: return "editar"
         }
     }
@@ -98,13 +106,15 @@ struct DetalleEscapadaView: View {
 
                 switch activa {
                 case .plan:
-                    PlanSecciones(escapada: e)
+                    PlanSecciones(escapada: e, hoja: $hoja)
                 case .reservas:
                     ReservasSecciones(escapada: e, hoja: $hoja)
                 case .lista:
                     ListaSecciones(escapada: e, mostrarIdeas: true)
                 case .gastos:
                     GastosSecciones(escapada: e, hoja: $hoja)
+                case .retos:
+                    RetosSecciones(escapada: e, hoja: $hoja)
                 case .recuerdo:
                     RecuerdoSecciones(escapada: e)
                 }
@@ -144,7 +154,7 @@ struct DetalleEscapadaView: View {
             }
             Button("Cancelar", role: .cancel) {}
         } message: {
-            Text("Se borrarán las reservas, gastos, listas y recuerdos de este viaje en los dos iPhones.")
+            Text("Se borrarán las reservas, gastos, listas, retos con sus fotos y recuerdos de este viaje en los dos iPhones.")
         }
     }
 
@@ -191,6 +201,13 @@ struct DetalleEscapadaView: View {
             FormularioAlojamiento(escapada: e, existente: a)
         case .gasto(let g):
             FormularioGasto(escapada: e, existente: g)
+        case .gastoEnDia(let fecha):
+            FormularioGasto(escapada: e, existente: nil, fechaInicial: fecha)
+        case .camaraReto(let r):
+            CamaraReto(reto: r)
+                .ignoresSafeArea()
+        case .fotoReto(let r):
+            VisorFotoReto(retoId: r.id)
         case .editar:
             NuevaEscapadaView(existente: e)
         }

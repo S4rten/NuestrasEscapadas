@@ -17,6 +17,8 @@ struct GastosSecciones: View {
         let pareja = almacen.nombreDePareja(miId: sesion.miId)
         let hayPareja = almacen.hayPareja(miId: sesion.miId)
 
+        SeccionPresupuesto(escapada: escapada, gastado: resumen.total, hoja: $hoja)
+
         Section {
             VStack(spacing: 10) {
                 HStack {
@@ -73,6 +75,10 @@ struct GastosSecciones: View {
             Text("Gastos compartidos")
         } footer: {
             Text("Todo se reparte a partes iguales. Toca un gasto para editarlo y desliza para borrarlo.")
+        }
+
+        if !gastos.isEmpty {
+            SeccionGastosPorDia(escapada: escapada, gastos: gastos)
         }
     }
 
@@ -135,7 +141,8 @@ struct FormularioGasto: View {
     @State private var categoria: String
     @State private var fecha: Date
 
-    init(escapada: Escapada, existente: Gasto?) {
+    /// `fechaInicial`: para gastos nuevos creados desde un día concreto del itinerario.
+    init(escapada: Escapada, existente: Gasto?, fechaInicial: Date? = nil) {
         self.escapada = escapada
         self.existente = existente
         if let g = existente {
@@ -153,7 +160,7 @@ struct FormularioGasto: View {
             _tasaTexto = State(initialValue: "")
             _pagadoPorId = State(initialValue: "")
             _categoria = State(initialValue: "Comida")
-            _fecha = State(initialValue: Date())
+            _fecha = State(initialValue: fechaInicial.map { $0.combinando(horaDe: Date()) } ?? Date())
         }
     }
 

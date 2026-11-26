@@ -8,6 +8,7 @@ import SwiftUI
 struct PlanSecciones: View {
     @EnvironmentObject var almacen: Almacen
     let escapada: Escapada
+    @Binding var hoja: HojaDetalle?
 
     @State private var dia = 1
     @State private var nombre = ""
@@ -80,6 +81,8 @@ struct PlanSecciones: View {
                 }
             }
         }
+
+        SeccionGastosDelDia(escapada: escapada, dia: diaActivo, hoja: $hoja)
     }
 
     // MARK: Selector de día
