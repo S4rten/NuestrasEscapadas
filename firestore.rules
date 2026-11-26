@@ -3,14 +3,46 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Todo cerrado por defecto. Solo existe la colección "parejas".
-    // Para entrar en un espacio hay que conocer su código (12 caracteres o más).
-    // No se permite LISTAR la colección "parejas", así que nadie puede descubrir códigos ajenos.
-    match /parejas/{codigo} {
-      allow get, create, update: if codigo.size() >= 12;
+    // ------------------------------------------------------------------------
+    // Cada iPhone inicia sesión de forma ANÓNIMA (invisible, sin contraseña).
+    // Solo pueden leer y escribir los iPhones registrados en
+    //   parejas/{codigo}/accesos/{uid}
+    // Para registrarse hay que conocer el código (12+ caracteres) y que el
+    // espacio NO esté cerrado (se cierra desde Ajustes › Seguridad).
+    // No se puede LISTAR "parejas", así que nadie puede descubrir códigos ajenos.
+    // ------------------------------------------------------------------------
 
+    function rutaEspacio(codigo) {
+      return /databases/$(database)/documents/parejas/$(codigo);
+    }
+
+    function dentro(codigo) {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/parejas/$(codigo)/accesos/$(request.auth.uid));
+    }
+
+    function abierto(codigo) {
+      return !exists(rutaEspacio(codigo))
+        || get(rutaEspacio(codigo)).data.get('cerrado', false) != true;
+    }
+
+    match /parejas/{codigo} {
+      // Documento del propio espacio (guarda el candado "cerrado").
+      allow get, create, update: if dentro(codigo);
+
+      // Registro de cada iPhone.
+      match /accesos/{uid} {
+        allow get: if request.auth != null && request.auth.uid == uid;
+        allow create: if request.auth != null
+          && request.auth.uid == uid
+          && codigo.size() >= 12
+          && abierto(codigo);
+        allow list, update, delete: if dentro(codigo);
+      }
+
+      // Todo lo demás: escapadas, gastos, fotos, billetes, deseos…
       match /{coleccion}/{documento} {
-        allow read, write: if codigo.size() >= 12;
+        allow read, write: if coleccion != 'accesos' && dentro(codigo);
       }
     }
   }

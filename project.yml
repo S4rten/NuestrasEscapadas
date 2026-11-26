@@ -33,6 +33,9 @@ targets:
         product: FirebaseCore
       - package: Firebase
         product: FirebaseFirestore
+      # Inicio de sesión anónimo e invisible: las reglas solo dejan entrar a vuestros iPhones.
+      - package: Firebase
+        product: FirebaseAuth
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.pareja.nuestrasescapadas
@@ -49,3 +52,5 @@ targets:
         # Retos de fotos: sin estos textos iOS cierra la app al abrir la cámara o guardar una foto.
         INFOPLIST_KEY_NSCameraUsageDescription: "Para hacer las fotos y selfies de los retos del viaje."
         INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription: "Para guardar en tu galería las fotos de los retos."
+        # Añadir la escapada al Calendario (solo escribir, la app no lee tu calendario).
+        INFOPLIST_KEY_NSCalendarsWriteOnlyAccessUsageDescription: "Para añadir vuestras escapadas, vuelos y planes a tu calendario."
