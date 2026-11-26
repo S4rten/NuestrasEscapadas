@@ -1,0 +1,17 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Todo cerrado por defecto. Solo existe la colección "parejas".
+    // Para entrar en un espacio hay que conocer su código (12 caracteres o más).
+    // No se permite LISTAR la colección "parejas", así que nadie puede descubrir códigos ajenos.
+    match /parejas/{codigo} {
+      allow get, create, update: if codigo.size() >= 12;
+
+      match /{coleccion}/{documento} {
+        allow read, write: if codigo.size() >= 12;
+      }
+    }
+  }
+}
