@@ -46,3 +46,6 @@ targets:
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: "UIInterfaceOrientationPortrait"
+        # Retos de fotos: sin estos textos iOS cierra la app al abrir la cámara o guardar una foto.
+        INFOPLIST_KEY_NSCameraUsageDescription: "Para hacer las fotos y selfies de los retos del viaje."
+        INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription: "Para guardar en tu galería las fotos de los retos."
