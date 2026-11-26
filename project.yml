@@ -28,6 +28,12 @@ targets:
       # El plist DEBE ir como recurso: si no, la app no arranca la nube.
       - path: GoogleService-Info.plist
         buildPhase: resources
+    # Claves que Xcode NO copia desde INFOPLIST_KEY_… (las ignora sin avisar):
+    # XcodeGen crea este Info.plist y Xcode lo junta con el que genera solo.
+    info:
+      path: Info.plist
+      properties:
+        NSCalendarsWriteOnlyAccessUsageDescription: "Para añadir vuestras escapadas, vuelos y planes a tu calendario."
     dependencies:
       - package: Firebase
         product: FirebaseCore
