@@ -133,6 +133,9 @@ struct ListaSecciones: View {
                             if idea.texto.lowercased().hasPrefix("http"), let enlace = urlDesdeTexto(idea.texto) {
                                 BotonEnlace(titulo: "Abrir", url: enlace)
                             }
+                            Spacer(minLength: 0)
+                            // Pasarla a un día del Plan (sin hora); si ya está, se ve el día.
+                            MenuAlPlan(escapada: escapada, texto: idea.texto)
                         }
                         BotonesVoto(coleccion: .ideas, id: idea.id, votos: idea.votos)
                     }
@@ -147,7 +150,7 @@ struct ListaSecciones: View {
             } header: {
                 Text("Notas rápidas e ideas")
             } footer: {
-                Text("Votad 👍 o 👎 cada idea: las que más os gustan suben arriba.")
+                Text("Votad 👍 o 👎 cada idea: las que más os gustan suben arriba. Con «Al plan» la pasáis al día que elijáis, sin hora (se la ponéis luego en el Plan).")
             }
         }
     }

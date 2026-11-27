@@ -56,7 +56,7 @@ struct OpcionesSecciones: View {
             Text("Nueva opción")
         } footer: {
             if todas.isEmpty {
-                Text("Apuntad aquí los candidatos antes de reservar, votad 👍/👎 y elegid uno. Los hoteles, vuelos y trenes elegidos pasan a Reservas con un toque.")
+                Text("Apuntad aquí los candidatos antes de reservar, votad 👍/👎 y elegid uno. Los hoteles, vuelos y trenes pasan a Reservas con «Añadir a Reservas», y las actividades al Plan con «Al plan».")
             }
         }
 
@@ -153,6 +153,26 @@ struct OpcionesSecciones: View {
                     BotonEnlace(titulo: "Ver", url: url)
                 }
             }
+
+            // Pasarla a Reservas (alojamientos, vuelos, trenes) o al Plan (actividades).
+            if o.tipoOpcion.vaAReservas {
+                if estaEnReservas(o) {
+                    Text("✅ Ya está en Reservas › \(apartadoReservas(o.tipoOpcion))")
+                        .font(.caption2.bold())
+                        .foregroundStyle(.green)
+                } else {
+                    Button {
+                        pasarAReservas(o)
+                    } label: {
+                        Label("Añadir a Reservas › \(apartadoReservas(o.tipoOpcion))", systemImage: "ticket")
+                            .font(.caption.bold())
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+            } else if o.tipoOpcion == .actividad {
+                MenuAlPlan(escapada: escapada, texto: o.titulo, enlaceExtra: o.enlace)
+            }
         }
         .padding(.vertical, 2)
         .contextMenu {
@@ -227,6 +247,36 @@ struct OpcionesSecciones: View {
         titulo = ""
         precioTexto = ""
         enlace = ""
+    }
+
+    /// Nombre del apartado de Reservas donde va cada tipo.
+    private func apartadoReservas(_ t: TipoOpcion) -> String {
+        switch t {
+        case .alojamiento: return "Alojamiento"
+        case .vuelo: return "Vuelos"
+        case .tren: return "Trenes"
+        default: return ""
+        }
+    }
+
+    /// ¿Ya se pasó esta opción a Reservas? (mismo nombre o mismo enlace)
+    private func estaEnReservas(_ o: Opcion) -> Bool {
+        let nombre = HorarioOSM.normalizar(o.titulo)
+        let enlace = o.enlace.recortado
+        switch o.tipoOpcion {
+        case .alojamiento:
+            return almacen.alojamientosDe(escapada.id).contains {
+                HorarioOSM.normalizar($0.nombre) == nombre || (!enlace.isEmpty && $0.urlReserva == enlace)
+            }
+        case .vuelo:
+            return almacen.vuelosDe(escapada.id).contains {
+                HorarioOSM.normalizar($0.aerolinea) == nombre || (!enlace.isEmpty && $0.urlReserva == enlace)
+            }
+        case .tren:
+            return !enlace.isEmpty && almacen.trenesDe(escapada.id).contains { $0.urlReserva == enlace }
+        default:
+            return false
+        }
     }
 
     /// Marca la opción como elegida y abre el formulario de la reserva ya relleno.

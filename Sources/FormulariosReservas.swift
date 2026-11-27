@@ -22,9 +22,10 @@ struct FormularioVuelo: View {
     @State private var webAbierta: WebAerolinea? = nil
     @State private var horasDeBusqueda = false                    // las horas las acaba de poner la búsqueda
 
-    init(escapada: Escapada, existente: Vuelo?) {
+    /// `esBorrador`: viene relleno (por ejemplo, desde Opciones) pero aún no está guardado.
+    init(escapada: Escapada, existente: Vuelo?, esBorrador: Bool = false) {
         self.escapada = escapada
-        self.esNuevo = (existente == nil)
+        self.esNuevo = (existente == nil) || esBorrador
         if let existente = existente {
             _vuelo = State(initialValue: existente)
         } else {
@@ -404,9 +405,9 @@ struct FormularioTren: View {
 
     private let operadoras = ["Renfe", "Iryo", "Ouigo", "Otra"]
 
-    init(escapada: Escapada, existente: TrenViaje?) {
+    init(escapada: Escapada, existente: TrenViaje?, esBorrador: Bool = false) {
         self.escapada = escapada
-        self.esNuevo = (existente == nil)
+        self.esNuevo = (existente == nil) || esBorrador
         if let existente = existente {
             _tren = State(initialValue: existente)
         } else {
@@ -511,9 +512,9 @@ struct FormularioAlojamiento: View {
 
     @State private var alojamiento: Alojamiento
 
-    init(escapada: Escapada, existente: Alojamiento?) {
+    init(escapada: Escapada, existente: Alojamiento?, esBorrador: Bool = false) {
         self.escapada = escapada
-        self.esNuevo = (existente == nil)
+        self.esNuevo = (existente == nil) || esBorrador
         if let existente = existente {
             _alojamiento = State(initialValue: existente)
         } else {

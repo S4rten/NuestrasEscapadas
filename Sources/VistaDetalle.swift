@@ -258,15 +258,22 @@ struct DetalleEscapadaView: View {
         }
     }
 
+    /// true si es una reserva rellena que todavía no existe (no es editar, es crear).
+    private func noGuardado(_ id: String?, en ids: [String]) -> Bool {
+        guard let id = id else { return false }
+        return !ids.contains(id)
+    }
+
     @ViewBuilder
     private func hojaContenido(_ h: HojaDetalle, _ e: Escapada) -> some View {
+        // Si viene relleno pero aún no está guardado (desde Opciones), el formulario es de "nuevo".
         switch h {
         case .vuelo(let v):
-            FormularioVuelo(escapada: e, existente: v)
+            FormularioVuelo(escapada: e, existente: v, esBorrador: noGuardado(v?.id, en: almacen.vuelos.map { $0.id }))
         case .tren(let t):
-            FormularioTren(escapada: e, existente: t)
+            FormularioTren(escapada: e, existente: t, esBorrador: noGuardado(t?.id, en: almacen.trenes.map { $0.id }))
         case .alojamiento(let a):
-            FormularioAlojamiento(escapada: e, existente: a)
+            FormularioAlojamiento(escapada: e, existente: a, esBorrador: noGuardado(a?.id, en: almacen.alojamientos.map { $0.id }))
         case .gasto(let g):
             FormularioGasto(escapada: e, existente: g)
         case .gastoEnDia(let fecha):
