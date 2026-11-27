@@ -20,6 +20,7 @@ struct PlanSecciones: View {
     @State private var hora = Date().conHora(11)
     @State private var soloPendientes = false
     @State private var ambiente = ""
+    @State private var editandoHora: Actividad? = nil     // plan al que se le pone o cambia la hora
 
     /// Modo "Hoy": si estáis de viaje, el Plan se abre directamente en el día de hoy.
     init(escapada: Escapada, hoja: Binding<HojaDetalle?>) {
@@ -55,6 +56,10 @@ struct PlanSecciones: View {
                     try? await Task.sleep(nanoseconds: 600_000_000)
                     if Task.isCancelled { return }
                     await UbicadorPlanes.situar(almacen: almacen, escapada: escapada, dia: diaActivo)
+                }
+                // Poner o cambiar la hora de un plan (va aquí porque esta fila siempre está visible).
+                .sheet(item: $editandoHora) { a in
+                    FormularioHoraPlan(actividad: a, escapada: escapada)
                 }
 
             Toggle("Ocupa todo el día", isOn: $todoElDia)
@@ -173,6 +178,11 @@ struct PlanSecciones: View {
                     .frame(width: 8, height: 8)
             }
             .frame(width: 52)
+            // Tocar la hora de un plan abre el selector de hora.
+            .contentShape(Rectangle())
+            .onTapGesture {
+                if let a = actividad(evento) { editandoHora = a }
+            }
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 4) {
@@ -190,6 +200,17 @@ struct PlanSecciones: View {
                     Text(evento.subtitulo)
                         .font(.caption2)
                         .foregroundStyle(.secondary)
+                }
+                // Plan sin hora (por ejemplo, venido de las ideas): ponérsela cuando ya se sepa.
+                if let a = actividad(evento), a.hora == nil, !a.todoElDia {
+                    Button {
+                        editandoHora = a
+                    } label: {
+                        Label("Poner hora", systemImage: "clock.badge.plus")
+                            .font(.caption2.bold())
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.mini)
                 }
                 // Horario de apertura de ese día (OpenStreetMap), si el plan está en el mapa.
                 if let a = actividad(evento), a.latitud != nil {
@@ -229,6 +250,13 @@ struct PlanSecciones: View {
         }
         .contextMenu {
             if let actividadId = evento.actividadId {
+                if let a = actividad(evento) {
+                    Button {
+                        editandoHora = a
+                    } label: {
+                        Label(a.hora == nil && !a.todoElDia ? "Poner hora…" : "Cambiar hora o día…", systemImage: "clock")
+                    }
+                }
                 Button {
                     almacen.actualizar(actividadId, en: .actividades, campos: [
                         "latitud": NSNull(), "longitud": NSNull(), "ubicacionBuscada": true
