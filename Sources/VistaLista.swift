@@ -95,6 +95,8 @@ struct ListaSecciones: View {
             }
         }
 
+        SeccionMaletaSugerida(escapada: escapada)
+
         SeccionPlantillasMaleta(escapada: escapada)
 
         if mostrarIdeas {

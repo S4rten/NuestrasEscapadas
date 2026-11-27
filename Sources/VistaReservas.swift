@@ -110,7 +110,7 @@ struct TarjetaVuelo: View {
                     .font(.caption.bold())
                     .foregroundStyle(.secondary)
                 Spacer()
-                Text(vuelo.fechaHoraSalida.formatted(date: .abbreviated, time: .omitted))
+                Text(vuelo.diaSalidaLocal)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
@@ -125,7 +125,7 @@ struct TarjetaVuelo: View {
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
-                    Text(vuelo.fechaHoraSalida.formatted(date: .omitted, time: .shortened))
+                    Text(vuelo.horaSalidaLocal)
                         .font(.caption.bold())
                         .foregroundStyle(Color.accentColor)
                 }
@@ -133,8 +133,8 @@ struct TarjetaVuelo: View {
                 VStack(spacing: 2) {
                     Image(systemName: "airplane")
                         .foregroundStyle(Color.accentColor)
-                    if vuelo.duracionMinutos > 0 {
-                        Text(textoDuracion(vuelo.duracionMinutos))
+                    if let minutos = vuelo.minutosDeVuelo {
+                        Text(textoDuracion(minutos))
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
@@ -149,19 +149,39 @@ struct TarjetaVuelo: View {
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
-                    Text(vuelo.fechaHoraLlegada.formatted(date: .omitted, time: .shortened))
+                    Text(vuelo.horaLlegadaLocal)
                         .font(.caption.bold())
                 }
             }
 
-            if !vuelo.terminalPuerta.isEmpty {
+            if vuelo.tieneHoraLocalDistinta {
                 HStack {
-                    Label(vuelo.terminalPuerta, systemImage: "door.left.hand.open")
-                        .font(.caption)
+                    Text("🕐 Horas locales de cada aeropuerto")
+                        .font(.caption2)
                         .foregroundStyle(.secondary)
                     Spacer()
                 }
             }
+
+            if !vuelo.terminalPuerta.isEmpty || !vuelo.asiento.isEmpty {
+                HStack(spacing: 12) {
+                    if !vuelo.terminalPuerta.isEmpty {
+                        Label(vuelo.terminalPuerta, systemImage: "door.left.hand.open")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    if !vuelo.asiento.isEmpty {
+                        Text("💺 \(vuelo.asiento)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    Spacer()
+                }
+            }
+
+            // El mismo día del vuelo: retrasos, puerta y cinta (con la clave de horarios).
+            FilaEstadoVuelo(vuelo: vuelo)
 
             HStack(spacing: 8) {
                 if !vuelo.localizador.isEmpty {

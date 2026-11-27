@@ -103,6 +103,7 @@ struct SeccionFichaPais: View {
             Section {
                 DisclosureGroup(isExpanded: $abierta) {
                     BloqueExteriores(iso: iso, escapada: escapada)
+                    FilaFestivosViaje(escapada: escapada)
                     if let info = FichasPaises.datos[iso] {
                         contenido(info)
                     } else {

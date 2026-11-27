@@ -7,6 +7,8 @@ import SwiftUI
 
 struct PlanSecciones: View {
     @EnvironmentObject var almacen: Almacen
+    // Para que la línea del tiempo se refresque al llegar el estado del vuelo de hoy.
+    @ObservedObject private var estadosVuelos = ServicioEstadoVuelos.compartido
     let escapada: Escapada
     @Binding var hoja: HojaDetalle?
 
@@ -189,6 +191,10 @@ struct PlanSecciones: View {
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
+                // Horario de apertura de ese día (OpenStreetMap), si el plan está en el mapa.
+                if let a = actividad(evento), a.latitud != nil {
+                    FilaHorarioPlan(actividad: a, fecha: escapada.fechaParaDia(diaActivo), pais: escapada.paisCodigo.uppercased())
+                }
                 if evento.enlace != nil || evento.ruta != nil {
                     HStack(spacing: 6) {
                         if let enlace = evento.enlace {
@@ -215,6 +221,12 @@ struct PlanSecciones: View {
             }
         }
         .listRowBackground(evento.todoElDia ? Color.accentColor.opacity(0.12) : nil)
+        .task(id: actividad(evento).map { ServicioHorarios.clave(de: $0) } ?? evento.id) {
+            // Pide el horario de apertura cuando el plan ya está situado en el mapa.
+            if let a = actividad(evento), a.latitud != nil {
+                ServicioHorarios.compartido.pedir(a)
+            }
+        }
         .contextMenu {
             if let actividadId = evento.actividadId {
                 Button {

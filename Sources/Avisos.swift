@@ -153,7 +153,7 @@ final class Avisos: NSObject, ObservableObject, UNUserNotificationCenterDelegate
                         id: "vuelo-\(v.id)",
                         fecha: v.fechaHoraSalida.addingTimeInterval(-3 * 3600),
                         titulo: "✈️ Vuelo \(v.origen) → \(v.destino) en 3 h",
-                        cuerpo: "Sale a las \(v.fechaHoraSalida.formatted(date: .omitted, time: .shortened)).\(detalle.isEmpty ? "" : " \(detalle)")"
+                        cuerpo: "Sale a las \(v.horaSalidaLocal) (hora local).\(detalle.isEmpty ? "" : " \(detalle)")"
                     ))
                 }
                 for t in almacen.trenesDe(e.id) {

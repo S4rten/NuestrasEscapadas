@@ -129,6 +129,7 @@ struct DetalleEscapadaView: View {
                     OpcionesSecciones(escapada: e, hoja: $hoja)
                 case .lista:
                     SeccionFichaPais(escapada: e)
+                    SeccionGuiaDestino(escapada: e)
                     ListaSecciones(escapada: e, mostrarIdeas: true)
                 case .gastos:
                     GastosSecciones(escapada: e, hoja: $hoja)
@@ -200,6 +201,16 @@ struct DetalleEscapadaView: View {
         }
         .onAppear { visto.marcarVista(escapadaId: e.id) }
         .onDisappear { visto.marcarVista(escapadaId: e.id) }
+        .task(id: e.id) {
+            // Datos del destino que usan varias pestañas: zona horaria y festivos.
+            if !oculto {
+                if let lat = e.latitud, let lon = e.longitud {
+                    await ZonasDestino.compartido.averiguar(lat: lat, lon: lon)
+                    await ServicioTiempo.compartido.cargar(lat: lat, lon: lon)   // también para la maleta sugerida
+                }
+                await ServicioFestivos.compartido.cargar(para: e)
+            }
+        }
     }
 
     private func anadirAlCalendario(_ e: Escapada) {
@@ -237,6 +248,8 @@ struct DetalleEscapadaView: View {
                     Text("🗓️ \(e.fechaInicio.formatted(date: .abbreviated, time: .omitted)) – \(e.fechaFin.formatted(date: .abbreviated, time: .omitted)) (\(e.totalDias) \(e.totalDias == 1 ? "día" : "días"))")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                    // "🕐 En Londres son las 14:05 (1 h menos que aquí)" (solo si la hora es distinta).
+                    TextoHoraDestino(escapada: e)
                     if e.esSorpresa {
                         Chip(texto: "🎁 Sorpresa · se revela el \(e.fechaRevelacion.formatted(date: .abbreviated, time: .omitted))")
                     }

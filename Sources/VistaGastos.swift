@@ -166,6 +166,10 @@ struct FormularioGasto: View {
     @State private var fecha: Date
     @State private var porcentajePagador: Double = 50
     @State private var modoReparto: ModoReparto = .aMedias
+    // Tasa oficial del día del gasto (BCE) para gastos de días anteriores.
+    @State private var tasaSugerida = ""              // la última tasa puesta sola (si la cambias tú, no se pisa)
+    @State private var tasaDelDia: TasaDelDia? = nil
+    @State private var cambioFechaODivisa = false
 
     /// `fechaInicial`: para gastos nuevos creados desde un día concreto del itinerario.
     init(escapada: Escapada, existente: Gasto?, fechaInicial: Date? = nil) {
@@ -342,7 +346,14 @@ struct FormularioGasto: View {
                 }
             }
             .onChange(of: divisa) { _, _ in
+                cambioFechaODivisa = true
                 aplicarTasaSugerida()
+            }
+            .onChange(of: fecha) { _, _ in
+                cambioFechaODivisa = true
+            }
+            .task(id: claveTasaDelDia) {
+                await aplicarTasaDelDia()
             }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -410,6 +421,9 @@ struct FormularioGasto: View {
     }
 
     private var textoPieTasa: String {
+        if let t = tasaDelDia, tasaTexto == tasaSugerida {
+            return "Tasa oficial del Banco Central Europeo del \(t.fechaLegible) (la del día del gasto). Si tu tarjeta aplicó otra, escribe la real."
+        }
         if let fechaTasas = divisas.ultimaActualizacion {
             return "Tasa orientativa del \(fechaTasas.formatted(date: .abbreviated, time: .omitted)). Si tu tarjeta aplicó otra, escribe la real."
         }
@@ -424,6 +438,33 @@ struct FormularioGasto: View {
         } else {
             tasaTexto = ""
         }
+        tasaSugerida = tasaTexto
+        tasaDelDia = nil
+    }
+
+    /// Cambia cada vez que cambian la divisa o el día del gasto.
+    private var claveTasaDelDia: String {
+        "\(divisa)|\(Int(fecha.inicioDelDia.timeIntervalSince1970))"
+    }
+
+    /// Gasto de un día anterior: pone la tasa oficial del BCE de ese día (si no la has cambiado tú).
+    private func aplicarTasaDelDia() async {
+        guard divisa != "EUR" else { return }
+        // En un gasto ya guardado no se toca la tasa, salvo que cambies la fecha o la divisa.
+        if existente != nil && !cambioFechaODivisa { return }
+        guard fecha.inicioDelDia < Date().inicioDelDia else {
+            tasaDelDia = nil
+            return
+        }
+        let codigo = divisa
+        let dia = fecha
+        guard let t = await ServicioTasasDelDia.compartido.tasa(de: codigo, dia: dia) else { return }
+        // Si mientras tanto cambió algo, o escribiste tu propia tasa, no se pisa.
+        guard codigo == divisa, Calendar.current.isDate(dia, inSameDayAs: fecha) else { return }
+        guard tasaTexto.recortado.isEmpty || tasaTexto == tasaSugerida else { return }
+        tasaTexto = textoTasa(t.tasa)
+        tasaSugerida = tasaTexto
+        tasaDelDia = t
     }
 
     /// Rellena el formulario con lo leído del ticket (solo lo que se ha podido leer).

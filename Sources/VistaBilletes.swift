@@ -45,9 +45,16 @@ struct BilletesView: View {
     @State private var fotoNoValida = false
     @State private var abierto: Billete? = nil
     @State private var borrando: Billete? = nil
+    @State private var mensajeTarjeta: String? = nil
+    @State private var leyendoTarjetas = false
 
     private var camaraDisponible: Bool {
         UIImagePickerController.isSourceTypeAvailable(.camera)
+    }
+
+    /// Si la reserva es un vuelo, las tarjetas de embarque se leen solas.
+    private var vuelo: Vuelo? {
+        almacen.vuelos.first { $0.id == reservaId }
     }
 
     var body: some View {
@@ -74,8 +81,27 @@ struct BilletesView: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
+                    if let mensaje = mensajeTarjeta {
+                        Text(mensaje)
+                            .font(.caption)
+                            .foregroundStyle(mensaje.contains("⚠️") ? Color.orange : Color.green)
+                    }
+                    if vuelo != nil && !lista.isEmpty {
+                        Button {
+                            Task { await leerGuardadas(lista) }
+                        } label: {
+                            HStack {
+                                Label("Leer las tarjetas de embarque guardadas", systemImage: "barcode.viewfinder")
+                                Spacer()
+                                if leyendoTarjetas { ProgressView() }
+                            }
+                        }
+                        .disabled(leyendoTarjetas)
+                    }
                 } footer: {
-                    Text("Consejo: haz una captura de pantalla de la tarjeta de embarque o del QR y elígela aquí.")
+                    Text(vuelo != nil
+                         ? "Consejo: haz una captura de la tarjeta de embarque y elígela aquí. Su código se lee solo (en el iPhone, sin internet) y completa el vuelo, el localizador y el asiento."
+                         : "Consejo: haz una captura de pantalla de la tarjeta de embarque o del QR y elígela aquí.")
                 }
 
                 Section {
@@ -126,7 +152,7 @@ struct BilletesView: View {
                     procesando = false
                     seleccion = nil
                     if let datos = datos {
-                        guardar(datos)
+                        anadirBillete(datos, original: nil)
                     } else {
                         fotoNoValida = true
                     }
@@ -136,7 +162,7 @@ struct BilletesView: View {
                 SelectorCamara(
                     alHacerFoto: { imagen in
                         if let datos = CompresorFotos.comprimir(imagen) {
-                            guardar(datos)
+                            anadirBillete(datos, original: imagen)
                         } else {
                             fotoNoValida = true
                         }
@@ -168,15 +194,56 @@ struct BilletesView: View {
         }
     }
 
-    private func guardar(_ datos: Data) {
+    private func guardar(_ datos: Data, tituloLeido: String? = nil) {
         let numero = almacen.billetesDe(reserva: reservaId).count + 1
         almacen.guardarBillete(
             datos,
             reservaId: reservaId,
             escapadaId: escapada.id,
-            titulo: "\(titulo) · \(numero)",
+            titulo: tituloLeido ?? "\(titulo) · \(numero)",
             miId: sesion.miId
         )
+    }
+
+    /// Guarda el billete y, si es de un vuelo, lee la tarjeta de embarque para completar el vuelo.
+    private func anadirBillete(_ datos: Data, original: UIImage?) {
+        guard let v = vuelo else {
+            guardar(datos)
+            return
+        }
+        procesando = true
+        Task {
+            var tarjeta: TarjetaEmbarque? = nil
+            if let imagen = original ?? UIImage(data: datos) {
+                tarjeta = await LectorTarjetaEmbarque.leer(imagen)
+            }
+            procesando = false
+            if let t = tarjeta {
+                let quien = t.nombrePila.isEmpty ? "" : " · \(t.nombrePila)"
+                let asiento = t.asiento.isEmpty ? "" : " · \(t.asiento)"
+                guardar(datos, tituloLeido: "Tarjeta de embarque\(quien)\(asiento)")
+                mensajeTarjeta = almacen.aplicarTarjetas([t], aVuelo: v)
+            } else {
+                guardar(datos)
+            }
+        }
+    }
+
+    /// Lee las tarjetas que ya estaban guardadas (descargadas en el iPhone).
+    private func leerGuardadas(_ lista: [Billete]) async {
+        guard let v = vuelo else { return }
+        leyendoTarjetas = true
+        var tarjetas: [TarjetaEmbarque] = []
+        for b in lista {
+            guard let datos = almacen.billetesDescargados[b.id], let imagen = UIImage(data: datos) else { continue }
+            if let t = await LectorTarjetaEmbarque.leer(imagen), !tarjetas.contains(t) {
+                tarjetas.append(t)
+            }
+        }
+        leyendoTarjetas = false
+        mensajeTarjeta = tarjetas.isEmpty
+            ? "No he encontrado ningún código de tarjeta de embarque en los billetes guardados (si alguno no se ha descargado aún, espera un momento)."
+            : almacen.aplicarTarjetas(tarjetas, aVuelo: v)
     }
 }
 

@@ -249,11 +249,17 @@ struct Vuelo: Identifiable, Codable {
     var ciudadOrigen: String = ""           // se rellena al buscar el vuelo (ej: "Madrid")
     var ciudadDestino: String = ""
     var duracionMinutos: Int = 0            // duración real del vuelo (0 = sin saber)
+    // Zona horaria de cada aeropuerto ("Europe/Madrid"). Vacía = la del iPhone (vuelos antiguos).
+    // Con zona, las horas se enseñan en la hora local de cada aeropuerto, como en el billete.
+    var zonaSalida: String = ""
+    var zonaLlegada: String = ""
+    var asiento: String = ""                // "14C (Eric) · 14D (Ana)" (se lee de la tarjeta de embarque)
 
     enum CodingKeys: String, CodingKey {
         case id, escapadaId, trayecto, origen, destino, fechaHoraSalida, fechaHoraLlegada
         case aerolinea, numeroVuelo, localizador, terminalPuerta, urlReserva
         case ciudadOrigen, ciudadDestino, duracionMinutos
+        case zonaSalida, zonaLlegada, asiento
     }
 }
 
@@ -275,6 +281,9 @@ extension Vuelo {
         ciudadOrigen = c.valor(.ciudadOrigen, "")
         ciudadDestino = c.valor(.ciudadDestino, "")
         duracionMinutos = c.valor(.duracionMinutos, 0)
+        zonaSalida = c.valor(.zonaSalida, "")
+        zonaLlegada = c.valor(.zonaLlegada, "")
+        asiento = c.valor(.asiento, "")
     }
 }
 

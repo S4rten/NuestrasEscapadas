@@ -115,6 +115,15 @@ struct FilaReto: View {
         UIImagePickerController.isSourceTypeAvailable(.camera)
     }
 
+    /// "🌇 Hoy el atardecer es a las 16:05" para los retos de atardecer o amanecer.
+    private var textoLuz: String? {
+        let t = reto.texto.lowercased()
+        guard let e = almacen.escapada(reto.escapadaId) else { return nil }
+        if t.contains("atardecer") || t.contains("puesta de sol") { return e.textoAtardecer() }
+        if t.contains("amanecer") || t.contains("amanece") { return e.textoAtardecer(amanecer: true) }
+        return nil
+    }
+
     var body: some View {
         HStack(spacing: 12) {
             if reto.completado {
@@ -134,6 +143,12 @@ struct FilaReto: View {
                      : "Pendiente")
                     .font(.caption2)
                     .foregroundStyle(reto.completado ? Color.green : Color.secondary)
+                // Retos de atardecer o amanecer: a qué hora es (en la hora del destino).
+                if !reto.completado, let texto = textoLuz {
+                    Text(texto)
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
+                }
             }
 
             Spacer(minLength: 0)

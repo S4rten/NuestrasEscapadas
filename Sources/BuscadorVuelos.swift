@@ -13,6 +13,11 @@ struct RutaVuelo {
     var ciudadOrigen: String = ""
     var ciudadDestino: String = ""
     var minutosAprox: Int? = nil            // estimado por la distancia (no es el horario real)
+    // Posición de los aeropuertos (sirve para saber su zona horaria).
+    var latOrigen: Double? = nil
+    var lonOrigen: Double? = nil
+    var latDestino: Double? = nil
+    var lonDestino: Double? = nil
 }
 
 enum BuscadorVuelos {
@@ -78,11 +83,14 @@ enum BuscadorVuelos {
             let datosOrigen = (ruta["origin"] as? [String: Any]) ?? [:]
             let datosDestino = (ruta["destination"] as? [String: Any]) ?? [:]
             var minutos: Int? = nil
-            if let la1 = numeroJSON(datosOrigen["latitude"]), let lo1 = numeroJSON(datosOrigen["longitude"]),
-               let la2 = numeroJSON(datosDestino["latitude"]), let lo2 = numeroJSON(datosDestino["longitude"]) {
+            let la1 = numeroJSON(datosOrigen["latitude"])
+            let lo1 = numeroJSON(datosOrigen["longitude"])
+            let la2 = numeroJSON(datosDestino["latitude"])
+            let lo2 = numeroJSON(datosDestino["longitude"])
+            if let la1 = la1, let lo1 = lo1, let la2 = la2, let lo2 = lo2 {
                 minutos = minutosEstimados(lat1: la1, lon1: lo1, lat2: la2, lon2: lo2)
             }
-            return RutaVuelo(
+            var encontrada = RutaVuelo(
                 aerolinea: aerolinea?.nombre ?? nombreApi ?? "",
                 origen: origen.uppercased(),
                 destino: destino.uppercased(),
@@ -91,6 +99,11 @@ enum BuscadorVuelos {
                 ciudadDestino: ((datosDestino["municipality"] as? String) ?? "").recortado,
                 minutosAprox: minutos
             )
+            encontrada.latOrigen = la1
+            encontrada.lonOrigen = lo1
+            encontrada.latDestino = la2
+            encontrada.lonDestino = lo2
+            return encontrada
         } catch {
             return nil
         }
@@ -204,6 +217,18 @@ struct HorarioVuelo: Identifiable {
     var llegada: Date? = nil                // hora local del aeropuerto de llegada
     var minutos: Int? = nil                 // duración real del vuelo
     var terminal: String = ""
+    // Instantes exactos y zonas de cada aeropuerto (para enseñar la hora local aunque el iPhone esté en otra zona).
+    var salidaExacta: Date? = nil
+    var llegadaExacta: Date? = nil
+    var zonaSalida: String = ""
+    var zonaLlegada: String = ""
+    // Estado del día (retrasos, puerta…). Solo viene con datos en directo, cerca de la hora del vuelo.
+    var estado: String = ""                 // Expected, Delayed, Canceled, Departed, Arrived…
+    var salidaPrevista: Date? = nil         // hora revisada (instante exacto)
+    var llegadaPrevista: Date? = nil
+    var puerta: String = ""
+    var terminalLlegada: String = ""
+    var cinta: String = ""                  // cinta de equipajes
 
     var resumen: String {
         var texto = "\(origen) → \(destino)"
@@ -225,7 +250,8 @@ enum ResultadoHorario {
 extension BuscadorVuelos {
     static let webClaveGratis = "https://rapidapi.com/aedbx-aedbx/api/aerodatabox/pricing"
 
-    static func buscarHorario(numeroVuelo: String, fecha: Date, clave: String) async -> ResultadoHorario {
+    /// `zona`: la del aeropuerto de salida, para pedir el día correcto.
+    static func buscarHorario(numeroVuelo: String, fecha: Date, clave: String, zona: TimeZone = .current) async -> ResultadoHorario {
         let codigo = numeroVuelo.uppercased().filter { $0.isLetter || $0.isNumber }
         let claveLimpia = clave.recortado
         guard codigo.count >= 3, !claveLimpia.isEmpty else { return .sinVuelo }
@@ -233,7 +259,7 @@ extension BuscadorVuelos {
         let formato = DateFormatter()
         formato.locale = Locale(identifier: "en_US_POSIX")
         formato.calendar = Calendar(identifier: .gregorian)
-        formato.timeZone = TimeZone.current
+        formato.timeZone = zona
         formato.dateFormat = "yyyy-MM-dd"
         let dia = formato.string(from: fecha)
 
@@ -305,7 +331,32 @@ extension BuscadorVuelos {
             let m = Int((fin.timeIntervalSince(inicio) / 60).rounded())
             if m > 0 && m < 24 * 60 { h.minutos = m }
         }
+
+        // Instantes exactos y zona horaria de cada aeropuerto.
+        h.salidaExacta = textoInicio.flatMap { instante($0) }
+        h.llegadaExacta = textoFin.flatMap { instante($0) }
+        h.zonaSalida = ((aeropuertoSalida["timeZone"] as? String) ?? "").recortado
+        h.zonaLlegada = ((aeropuertoLlegada["timeZone"] as? String) ?? "").recortado
+
+        // Estado del día: horas revisadas, puerta, terminal de llegada y cinta.
+        h.estado = ((vuelo["status"] as? String) ?? "").recortado
+        h.salidaPrevista = horaRevisada(salida)
+        h.llegadaPrevista = horaRevisada(llegada)
+        h.puerta = ((salida["gate"] as? String) ?? "").recortado
+        h.terminalLlegada = ((llegada["terminal"] as? String) ?? "").recortado
+        h.cinta = ((llegada["baggageBelt"] as? String) ?? "").recortado
         return h
+    }
+
+    /// Hora revisada (o prevista) de un movimiento, como instante exacto.
+    private static func horaRevisada(_ movimiento: [String: Any]) -> Date? {
+        for clave in ["revisedTime", "predictedTime"] {
+            if let t = movimiento[clave] as? [String: Any] {
+                if let utc = t["utc"] as? String, let d = instante(utc) { return d }
+                if let local = t["local"] as? String, let d = instante(local) { return d }
+            }
+        }
+        return nil
     }
 
     private static func codigoAeropuerto(_ aeropuerto: [String: Any]) -> String {

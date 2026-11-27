@@ -158,6 +158,9 @@ struct SeccionTiempoDia: View {
                 .task(id: "\(lat),\(lon)") {
                     await tiempo.cargar(lat: lat, lon: lon)
                 }
+                // Amanecer y atardecer (calculados en el iPhone) y festivo del día, si lo es.
+                FilaSolDia(escapada: escapada, dia: dia)
+                FilaFestivoDia(escapada: escapada, dia: dia)
             } header: {
                 Text("Tiempo en \(escapada.destino) · Día \(dia)")
             }

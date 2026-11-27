@@ -29,8 +29,15 @@ extension Almacen {
         let fecha = escapada.fechaParaDia(dia)
         var lista: [EventoLinea] = []
 
-        for v in vuelosDe(escapada.id) where calendario.isDate(v.fechaHoraSalida, inSameDayAs: fecha) {
-            let detalles = [v.aerolinea, v.numeroVuelo, v.terminalPuerta].filter { !$0.isEmpty }
+        // El día del vuelo se cuenta en la hora local de su aeropuerto.
+        for v in vuelosDe(escapada.id) where v.saleElDia(fecha) {
+            var detalles = [v.aerolinea, v.numeroVuelo, v.terminalPuerta].filter { !$0.isEmpty }
+            if !v.zonaSalida.isEmpty && v.zonaSalida != TimeZone.current.identifier {
+                detalles.append("sale \(v.horaSalidaLocal) hora local")
+            }
+            if let estado = ServicioEstadoVuelos.compartido.resumen(de: v) {
+                detalles.insert(estado, at: 0)
+            }
             lista.append(EventoLinea(
                 id: "vuelo-\(v.id)",
                 hora: v.fechaHoraSalida,
@@ -138,6 +145,7 @@ extension Almacen {
 
 struct SeccionAhora: View {
     @EnvironmentObject var almacen: Almacen
+    @ObservedObject private var estadosVuelos = ServicioEstadoVuelos.compartido
     let escapada: Escapada
 
     var body: some View {
@@ -157,6 +165,11 @@ struct SeccionAhora: View {
                 }
             } header: {
                 Text("Hoy · Día \(dia) de \(escapada.totalDias)")
+            }
+            .task(id: escapada.id) {
+                for v in almacen.vuelosDe(escapada.id) where ServicioEstadoVuelos.esDeHoy(v) {
+                    await estadosVuelos.actualizar(v, clave: almacen.claveVuelos)
+                }
             }
         }
     }
@@ -195,6 +208,7 @@ struct FilaEventoCompacta: View {
 struct TarjetaHoy: View {
     @EnvironmentObject var almacen: Almacen
     @ObservedObject private var tiempo = ServicioTiempo.compartido
+    @ObservedObject private var estadosVuelos = ServicioEstadoVuelos.compartido
     let escapada: Escapada
 
     var body: some View {
@@ -253,6 +267,10 @@ struct TarjetaHoy: View {
         .task(id: escapada.id) {
             if let lat = escapada.latitud, let lon = escapada.longitud {
                 await tiempo.cargar(lat: lat, lon: lon)
+            }
+            // Vuelos de hoy: retrasos y puerta (como mucho una consulta por hora).
+            for v in almacen.vuelosDe(escapada.id) where ServicioEstadoVuelos.esDeHoy(v) {
+                await estadosVuelos.actualizar(v, clave: almacen.claveVuelos)
             }
         }
     }

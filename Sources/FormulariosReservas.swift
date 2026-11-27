@@ -44,7 +44,7 @@ struct FormularioVuelo: View {
         if almacen.claveVuelos.recortado.isEmpty {
             return "Con el nº de vuelo se rellenan la ruta y las ciudades. Activando los horarios, también la hora de salida, la de llegada y la duración. Compruébalo siempre con tu billete."
         }
-        let dia = vuelo.fechaHoraSalida.formatted(date: .abbreviated, time: .omitted)
+        let dia = vuelo.diaSalidaLocal
         return "Se busca el vuelo del día de la salida (\(dia)) y se rellenan la ruta, las ciudades, las horas y la duración. Compruébalo siempre con tu billete."
     }
 
@@ -64,6 +64,9 @@ struct FormularioVuelo: View {
                         .textInputAutocapitalization(.characters)
                         .autocorrectionDisabled()
                     TextField("Aerolínea", text: $vuelo.aerolinea)
+                    TextField("Asientos (ej: 14C y 14D)", text: $vuelo.asiento)
+                        .textInputAutocapitalization(.characters)
+                        .autocorrectionDisabled()
                 }
 
                 Section {
@@ -153,13 +156,21 @@ struct FormularioVuelo: View {
                             .foregroundStyle(.secondary)
                         TextField("Ciudad de destino", text: $vuelo.ciudadDestino)
                     }
+                    // Cada hora en la hora local de su aeropuerto (como en el billete).
                     DatePicker("Salida", selection: $vuelo.fechaHoraSalida)
+                        .environment(\.timeZone, vuelo.zonaDeSalida)
                     DatePicker("Llegada", selection: $vuelo.fechaHoraLlegada)
-                    if vuelo.duracionMinutos > 0 {
+                        .environment(\.timeZone, vuelo.zonaDeLlegada)
+                    if vuelo.tieneHoraLocalDistinta {
+                        Text("Horas locales: salida en hora de \(vuelo.zonaDeSalida.ciudadLegible), llegada en hora de \(vuelo.zonaDeLlegada.ciudadLegible).")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    if let minutos = vuelo.minutosDeVuelo {
                         HStack {
                             Text("Duración del vuelo")
                             Spacer()
-                            Text(textoDuracion(vuelo.duracionMinutos))
+                            Text(textoDuracion(minutos))
                                 .foregroundStyle(.secondary)
                         }
                     }
@@ -218,7 +229,7 @@ struct FormularioVuelo: View {
 
         // 1) Con la clave: horario real de ese día.
         if !clave.isEmpty {
-            let resultado = await BuscadorVuelos.buscarHorario(numeroVuelo: vuelo.numeroVuelo, fecha: vuelo.fechaHoraSalida, clave: clave)
+            let resultado = await BuscadorVuelos.buscarHorario(numeroVuelo: vuelo.numeroVuelo, fecha: vuelo.fechaHoraSalida, clave: clave, zona: vuelo.zonaDeSalida)
             switch resultado {
             case .encontrados(let lista):
                 buscando = false
@@ -231,7 +242,7 @@ struct FormularioVuelo: View {
                 }
                 return
             case .sinVuelo:
-                aviso = "No hay horario de ese vuelo el \(vuelo.fechaHoraSalida.formatted(date: .abbreviated, time: .omitted)) (revisa el día de la salida). "
+                aviso = "No hay horario de ese vuelo el \(vuelo.diaSalidaLocal) (revisa el día de la salida). "
             case .claveNoValida:
                 aviso = "La clave de horarios no funciona: revísala en Ajustes › Horarios de vuelos. "
             case .limiteAgotado:
@@ -251,6 +262,7 @@ struct FormularioVuelo: View {
             if !ruta.ciudadDestino.isEmpty { vuelo.ciudadDestino = ruta.ciudadDestino }
             if vuelo.aerolinea.recortado.isEmpty && !ruta.aerolinea.isEmpty { vuelo.aerolinea = ruta.aerolinea }
             if vuelo.urlReserva.recortado.isEmpty && !ruta.urlGestion.isEmpty { vuelo.urlReserva = ruta.urlGestion }
+            await ponerZonas(ruta)
             var texto = aviso + "Ruta: \(ciudadYCodigo(ruta.ciudadOrigen, ruta.origen)) → \(ciudadYCodigo(ruta.ciudadDestino, ruta.destino))"
             if let m = ruta.minutosAprox {
                 texto += " · unas \(textoDuracion(m)) de vuelo"
@@ -274,8 +286,23 @@ struct FormularioVuelo: View {
         if vuelo.aerolinea.recortado.isEmpty && !h.aerolinea.isEmpty { vuelo.aerolinea = h.aerolinea }
         if vuelo.terminalPuerta.recortado.isEmpty && !h.terminal.isEmpty { vuelo.terminalPuerta = "Terminal \(h.terminal)" }
         if let m = h.minutos { vuelo.duracionMinutos = m }
-        if let salida = h.salida {
+        if let exacta = h.salidaExacta, !h.zonaSalida.isEmpty, TimeZone(identifier: h.zonaSalida) != nil {
+            // Instantes exactos + zona de cada aeropuerto: se ve la hora local aunque el iPhone esté en otra zona.
+            if exacta != vuelo.fechaHoraSalida { horasDeBusqueda = true }
+            vuelo.zonaSalida = h.zonaSalida
+            vuelo.fechaHoraSalida = exacta
+            if let llegada = h.llegadaExacta, !h.zonaLlegada.isEmpty, TimeZone(identifier: h.zonaLlegada) != nil {
+                vuelo.zonaLlegada = h.zonaLlegada
+                vuelo.fechaHoraLlegada = llegada
+            } else {
+                vuelo.zonaLlegada = h.zonaSalida
+                vuelo.fechaHoraLlegada = exacta.addingTimeInterval(Double((h.minutos ?? 150) * 60))
+            }
+        } else if let salida = h.salida {
+            // Sin zonas: la hora tal cual sale en el billete, en la zona del iPhone.
             if salida != vuelo.fechaHoraSalida { horasDeBusqueda = true }
+            vuelo.zonaSalida = ""
+            vuelo.zonaLlegada = ""
             vuelo.fechaHoraSalida = salida
             vuelo.fechaHoraLlegada = h.llegada ?? salida.addingTimeInterval(Double((h.minutos ?? 150) * 60))
         }
@@ -312,6 +339,31 @@ struct FormularioVuelo: View {
         ciudad.isEmpty ? codigo : "\(ciudad) (\(codigo))"
     }
 
+    /// Sin horario real: averigua la zona horaria de cada aeropuerto por su posición y
+    /// deja las horas escritas tal cual (las 18:00 siguen siendo las 18:00, ahora en hora local).
+    private func ponerZonas(_ ruta: RutaVuelo) async {
+        var zonaSalidaNueva: TimeZone? = nil
+        var zonaLlegadaNueva: TimeZone? = nil
+        if let lat = ruta.latOrigen, let lon = ruta.lonOrigen {
+            zonaSalidaNueva = await ZonasDestino.compartido.averiguar(lat: lat, lon: lon)
+        }
+        if let lat = ruta.latDestino, let lon = ruta.lonDestino {
+            zonaLlegadaNueva = await ZonasDestino.compartido.averiguar(lat: lat, lon: lon)
+        }
+        let salidaAntes = vuelo.fechaHoraSalida
+        let llegadaAntes = vuelo.fechaHoraLlegada
+        if let z = zonaSalidaNueva, z.identifier != vuelo.zonaSalida {
+            let nueva = salidaAntes.mismaHoraDeReloj(de: vuelo.zonaDeSalida, a: z)
+            if nueva != salidaAntes { horasDeBusqueda = true }
+            vuelo.zonaSalida = z.identifier
+            vuelo.fechaHoraSalida = nueva
+        }
+        if let z = zonaLlegadaNueva, z.identifier != vuelo.zonaLlegada {
+            vuelo.fechaHoraLlegada = llegadaAntes.mismaHoraDeReloj(de: vuelo.zonaDeLlegada, a: z)
+            vuelo.zonaLlegada = z.identifier
+        }
+    }
+
     private func guardar() {
         var v = vuelo
         v.escapadaId = escapada.id
@@ -324,6 +376,7 @@ struct FormularioVuelo: View {
         v.urlReserva = v.urlReserva.recortado
         v.ciudadOrigen = v.ciudadOrigen.recortado
         v.ciudadDestino = v.ciudadDestino.recortado
+        v.asiento = v.asiento.recortado
         almacen.guardar(v, en: .vuelos)
         dismiss()
     }
